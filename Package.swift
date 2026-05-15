@@ -12,7 +12,8 @@ let package = Package(
         .executable(name: "voice-captioner-app", targets: ["VoiceCaptionerApp"]),
         .executable(name: "microphone-smoke", targets: ["MicrophoneSmoke"]),
         .executable(name: "system-audio-smoke", targets: ["SystemAudioSmoke"]),
-        .executable(name: "dual-capture-smoke", targets: ["DualCaptureSmoke"])
+        .executable(name: "dual-capture-smoke", targets: ["DualCaptureSmoke"]),
+        .executable(name: "unified-capture-smoke", targets: ["UnifiedCaptureSmoke"])
     ],
     targets: [
         .target(
@@ -32,6 +33,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "DualCaptureSmoke",
+            dependencies: ["VoiceCaptionerCore"]
+        ),
+        .executableTarget(
+            name: "UnifiedCaptureSmoke",
             dependencies: ["VoiceCaptionerCore"]
         ),
         .testTarget(

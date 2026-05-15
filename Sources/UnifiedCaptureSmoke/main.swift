@@ -1,8 +1,8 @@
-import Foundation
 import AVFoundation
+import Foundation
 import VoiceCaptionerCore
 
-private struct DualCaptureSmokeReport: Codable {
+private struct UnifiedCaptureSmokeReport: Codable {
     var startedAt: Date
     var stoppedAt: Date
     var requestedDurationSeconds: TimeInterval
@@ -13,71 +13,62 @@ private struct DualCaptureSmokeReport: Codable {
 }
 
 @main
-struct DualCaptureSmoke {
+struct UnifiedCaptureSmoke {
     static func main() async {
         let requestedDuration = requestedDurationSeconds()
         let root = URL(filePath: FileManager.default.currentDirectoryPath)
             .appending(path: ".tmp/capture-smoke", directoryHint: .isDirectory)
-        let systemURL = root.appending(path: "dual-system.wav")
-        let microphoneURL = root.appending(path: "dual-microphone.wav")
-        let metadataURL = root.appending(path: "dual-metadata.json")
-        let system = SystemAudioRecorder()
-        let microphone = MicrophoneRecorder()
+        let systemURL = root.appending(path: "unified-system.wav")
+        let microphoneURL = root.appending(path: "unified-microphone.wav")
+        let metadataURL = root.appending(path: "unified-metadata.json")
+        let recorder = UnifiedScreenCaptureAudioRecorder()
 
-        var systemNeedsCleanup = false
-        var microphoneNeedsCleanup = false
         do {
             try await ensureMicrophonePermission()
             let start = Date()
-            try await system.start(outputURL: systemURL)
-            systemNeedsCleanup = true
-            try microphone.start(outputURL: microphoneURL)
-            microphoneNeedsCleanup = true
+            try await recorder.start(systemURL: systemURL, microphoneURL: microphoneURL)
             try await Task.sleep(for: .seconds(requestedDuration))
-            async let stoppedSystem = system.stopWithMetadata()
-            async let stoppedMicrophone = microphone.stopWithMetadata()
-            let (systemResult, microphoneResult) = try await (stoppedSystem, stoppedMicrophone)
-            systemNeedsCleanup = false
-            microphoneNeedsCleanup = false
-            let systemSize = try fileSize(systemResult.file)
-            let microphoneSize = try fileSize(microphoneResult.file)
+            let result = try await recorder.stopWithMetadata()
+            let systemSize = try fileSize(result.system.file)
+            let microphoneSize = try fileSize(result.microphone.file)
             let stoppedAt = Date()
-            let actualElapsed = stoppedAt.timeIntervalSince(start)
             let assessment = CaptureGateAssessment.evaluate(
                 systemSize: systemSize,
                 microphoneSize: microphoneSize,
-                system: systemResult.metadata,
-                microphone: microphoneResult.metadata
+                system: result.system.metadata,
+                microphone: result.microphone.metadata
             )
-            let report = DualCaptureSmokeReport(
+            let report = UnifiedCaptureSmokeReport(
                 startedAt: start,
                 stoppedAt: stoppedAt,
                 requestedDurationSeconds: requestedDuration,
-                actualElapsedSeconds: actualElapsed,
-                system: systemResult.metadata,
-                microphone: microphoneResult.metadata,
+                actualElapsedSeconds: stoppedAt.timeIntervalSince(start),
+                system: result.system.metadata,
+                microphone: result.microphone.metadata,
                 assessment: assessment
             )
             try writeReport(report, to: metadataURL)
+
             print("started_at=\(ISO8601DateFormatter().string(from: start))")
             print("requested_duration_seconds=\(requestedDuration)")
-            print("actual_elapsed_seconds=\(actualElapsed)")
-            print("system=\(systemResult.file.path)")
+            print("actual_elapsed_seconds=\(report.actualElapsedSeconds)")
+            print("system=\(result.system.file.path)")
             print("system_bytes=\(systemSize)")
-            print("system_sample_rate=\(systemResult.metadata.sampleRate ?? 0)")
-            print("system_channel_count=\(systemResult.metadata.channelCount ?? 0)")
-            print("system_duration_seconds=\(systemResult.metadata.duration ?? 0)")
-            print("system_first_sample_time=\(systemResult.metadata.firstSamplePresentationTime ?? 0)")
-            print("system_first_sample_offset_seconds=\(systemResult.metadata.firstSampleOffset ?? 0)")
-            print("system_timing_confidence=\(systemResult.metadata.timingConfidence.rawValue)")
-            print("microphone=\(microphoneResult.file.path)")
+            print("system_sample_rate=\(result.system.metadata.sampleRate ?? 0)")
+            print("system_channel_count=\(result.system.metadata.channelCount ?? 0)")
+            print("system_duration_seconds=\(result.system.metadata.duration ?? 0)")
+            print("system_first_sample_time=\(result.system.metadata.firstSamplePresentationTime ?? 0)")
+            print("system_first_sample_offset_seconds=\(result.system.metadata.firstSampleOffset ?? 0)")
+            print("system_timing_confidence=\(result.system.metadata.timingConfidence.rawValue)")
+            print("microphone=\(result.microphone.file.path)")
             print("microphone_bytes=\(microphoneSize)")
-            print("microphone_sample_rate=\(microphoneResult.metadata.sampleRate ?? 0)")
-            print("microphone_channel_count=\(microphoneResult.metadata.channelCount ?? 0)")
-            print("microphone_duration_seconds=\(microphoneResult.metadata.duration ?? 0)")
-            print("microphone_first_sample_offset_seconds=\(microphoneResult.metadata.firstSampleOffset ?? 0)")
+            print("microphone_sample_rate=\(result.microphone.metadata.sampleRate ?? 0)")
+            print("microphone_channel_count=\(result.microphone.metadata.channelCount ?? 0)")
+            print("microphone_duration_seconds=\(result.microphone.metadata.duration ?? 0)")
+            print("microphone_first_sample_time=\(result.microphone.metadata.firstSamplePresentationTime ?? 0)")
+            print("microphone_first_sample_offset_seconds=\(result.microphone.metadata.firstSampleOffset ?? 0)")
             print("microphone_start_offset_uncertainty_seconds=\(assessment.startOffsetUncertaintySeconds ?? 0)")
-            print("microphone_timing_confidence=\(microphoneResult.metadata.timingConfidence.rawValue)")
+            print("microphone_timing_confidence=\(result.microphone.metadata.timingConfidence.rawValue)")
             if let startOffset = assessment.startOffsetSeconds {
                 print("start_offset_seconds=\(startOffset)")
             }
@@ -87,27 +78,22 @@ struct DualCaptureSmoke {
             if let tolerance = assessment.driftToleranceSeconds {
                 print("drift_tolerance_seconds=\(tolerance)")
             }
-            print("option_a_passed=\(assessment.gatePassed)")
+            print("option_b_passed=\(assessment.gatePassed)")
             print("merge_policy=timestamp_offsets")
             print("metadata=\(metadataURL.path)")
             guard assessment.gatePassed else {
                 Foundation.exit(2)
             }
         } catch {
-            if microphoneNeedsCleanup {
-                _ = try? await microphone.stop()
-            }
-            if systemNeedsCleanup {
-                _ = try? await system.stop()
-            }
-            fputs("dual-capture-smoke failed: \(error)\n", stderr)
+            _ = try? await recorder.stopWithMetadata()
+            fputs("unified-capture-smoke failed: \(error)\n", stderr)
             Foundation.exit(1)
         }
     }
 
     private static func requestedDurationSeconds() -> TimeInterval {
         let explicit = CommandLine.arguments.dropFirst().first.flatMap(TimeInterval.init)
-        let environment = ProcessInfo.processInfo.environment["VOICE_CAPTIONER_DUAL_CAPTURE_SECONDS"].flatMap(TimeInterval.init)
+        let environment = ProcessInfo.processInfo.environment["VOICE_CAPTIONER_UNIFIED_CAPTURE_SECONDS"].flatMap(TimeInterval.init)
         return max(explicit ?? environment ?? 30, 1)
     }
 
@@ -132,7 +118,7 @@ struct DualCaptureSmoke {
         return size?.intValue ?? 0
     }
 
-    private static func writeReport(_ report: DualCaptureSmokeReport, to url: URL) throws {
+    private static func writeReport(_ report: UnifiedCaptureSmokeReport, to url: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601

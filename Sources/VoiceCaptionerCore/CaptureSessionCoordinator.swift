@@ -51,7 +51,7 @@ public final class CaptureSessionCoordinator: @unchecked Sendable {
                 do {
                     let track = try await recorder.start(
                         outputURL: outputURL,
-                        deviceID: recorder.kind == .microphone ? config.microphoneDeviceID : nil,
+                        deviceID: config.microphoneDeviceID,
                         sessionStart: now
                     )
                     startedTracks.append(track)
@@ -210,6 +210,72 @@ private struct ActiveCaptureSession: Sendable {
     var startedAt: Date
     var failures: [CaptureFailure]
     var finalizedResult: CaptureResult?
+}
+
+public final class UnifiedScreenCaptureSourceRecorder: CaptureSourceRecorder, @unchecked Sendable {
+    public let kind: AudioTrackKind
+    private let bridge: UnifiedScreenCaptureRecorderBridge
+
+    public init(kind: AudioTrackKind, bridge: UnifiedScreenCaptureRecorderBridge) {
+        self.kind = kind
+        self.bridge = bridge
+    }
+
+    public func start(outputURL: URL, deviceID: String?, sessionStart: Date) async throws -> AudioTrack {
+        let audioDirectory = outputURL.deletingLastPathComponent()
+        try await bridge.startIfNeeded(
+            systemURL: audioDirectory.appending(path: "system.wav"),
+            microphoneURL: audioDirectory.appending(path: "microphone.wav"),
+            microphoneDeviceID: deviceID
+        )
+        return AudioTrack(
+            id: kind.rawValue,
+            kind: kind,
+            relativePath: relativeAudioPath(for: outputURL),
+            timingConfidence: .unknown
+        )
+    }
+
+    public func stop() async throws -> AudioTrack {
+        try await bridge.stop(kind: kind)
+    }
+}
+
+public actor UnifiedScreenCaptureRecorderBridge {
+    private let recorder: UnifiedScreenCaptureAudioRecorder
+    private var started = false
+    private var result: UnifiedAudioRecordingResult?
+
+    public init(recorder: UnifiedScreenCaptureAudioRecorder = UnifiedScreenCaptureAudioRecorder()) {
+        self.recorder = recorder
+    }
+
+    public func startIfNeeded(systemURL: URL, microphoneURL: URL, microphoneDeviceID: String?) async throws {
+        guard !started else { return }
+        try await recorder.start(
+            systemURL: systemURL,
+            microphoneURL: microphoneURL,
+            microphoneDeviceID: microphoneDeviceID
+        )
+        started = true
+    }
+
+    public func stop(kind: AudioTrackKind) async throws -> AudioTrack {
+        if result == nil {
+            result = try await recorder.stopWithMetadata()
+        }
+        guard let result else {
+            throw UnifiedScreenCaptureAudioRecorderError.missingTrack(kind)
+        }
+        switch kind {
+        case .system:
+            return audioTrack(from: result.system.metadata, fallbackURL: result.system.file)
+        case .microphone:
+            return audioTrack(from: result.microphone.metadata, fallbackURL: result.microphone.file)
+        case .mixed:
+            throw UnifiedScreenCaptureAudioRecorderError.missingTrack(.mixed)
+        }
+    }
 }
 
 public struct SystemAudioCaptureSourceRecorder: CaptureSourceRecorder {

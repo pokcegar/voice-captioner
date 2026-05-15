@@ -10,10 +10,13 @@ public struct NativeMacCaptureProvider: AudioCaptureProvider {
     private let captureGatePassed: Bool
 
     public init(
-        coordinator: CaptureSessionCoordinator = CaptureSessionCoordinator(recorders: [
-            SystemAudioCaptureSourceRecorder(),
-            MicrophoneCaptureSourceRecorder()
-        ]),
+        coordinator: CaptureSessionCoordinator = CaptureSessionCoordinator(recorders: {
+            let bridge = UnifiedScreenCaptureRecorderBridge()
+            return [
+                UnifiedScreenCaptureSourceRecorder(kind: .system, bridge: bridge),
+                UnifiedScreenCaptureSourceRecorder(kind: .microphone, bridge: bridge)
+            ]
+        }()),
         captureGatePassed: Bool = false
     ) {
         self.coordinator = coordinator

@@ -1,10 +1,10 @@
 # Capture Gate: Native Mac Dual-Track Audio
 
-Status: **partially passed**
+Status: **passed via Option B unified ScreenCaptureKit timing path**
 
 This gate blocks broad UI/transcription integration that depends on live dual-track capture. Phase 1/2 capture work may continue inside the native capture slice, but Phases 3/5/6 must not start until this document records a pass decision with fresh verification evidence.
 
-The repository currently contains provider protocols, native microphone enumeration/permission checks, standalone microphone/system recording smoke paths, a dual-capture smoke path, and metadata fields for per-track timing. `NativeMacCaptureProvider.start` still intentionally throws `feasibilityGateNotPassed` until the cross-phase gate has complete timing/drift evidence and the provider coordinator is wired end-to-end.
+The repository currently contains provider protocols, native microphone enumeration/permission checks, standalone split-recorder smoke paths, a unified ScreenCaptureKit audio/microphone smoke path, metadata fields for per-track timing, and an automated gate assessment. Option A split-recorder evidence failed the drift threshold, but Option B unified ScreenCaptureKit sample-buffer capture passed the 30-second timing gate with observed system and microphone timestamps.
 
 ## Gate Questions
 
@@ -30,9 +30,9 @@ The repository currently contains provider protocols, native microphone enumerat
 
 ## Current Decision
 
-Go/no-go: **No-go for broad UI/transcription integration that depends on full native dual-track capture.**
+Go/no-go: **Go for native dual-track capture through the unified ScreenCaptureKit path; no-go for the old split-recorder Option A path.**
 
-Reason: Microphone recording, standalone whole-system audio recording, same-command dual capture, and the Swift package test/build baseline are proven on this machine. The gate is not complete until shared timing metadata is emitted from live capture, start offset/drift are measured from the same session, a numeric drift tolerance is recorded, and `NativeMacCaptureProvider.start` no longer throws the feasibility-gate error.
+Reason: Repeated split-recorder Option A smoke runs produced machine-readable metadata but measured drift above the <= 100 ms threshold. The follow-up Option B unified ScreenCaptureKit sample-buffer path produced non-empty system and microphone WAV files, observed first-sample timestamps for both tracks, 0 s start-offset uncertainty, and drift below the 100 ms threshold. Broad UI/transcription work may now build on the unified provider path, while keeping the old split-recorder path as smoke/fallback evidence only.
 
 ## Environment Evidence
 
@@ -59,6 +59,68 @@ Reason: Microphone recording, standalone whole-system audio recording, same-comm
 - System output size: 614656 bytes.
 - Microphone output size: 579584 bytes.
 
+### 30-Second Option A Timing Smoke
+
+Run 1:
+
+- Date: 2026-05-15T01:59:01Z.
+- Command: `swift run dual-capture-smoke 30`.
+- Exit: 2, because the smoke completed and produced metadata but Option A failed the pass threshold.
+- Metadata: `.tmp/capture-smoke/dual-metadata.json`.
+- System output: `.tmp/capture-smoke/dual-system.wav`, 6029056 bytes, 48000 Hz, 2 channels, duration 31.38 s, first sample observed, first sample offset 0.099411964 s.
+- Microphone output: `.tmp/capture-smoke/dual-microphone.wav`, 5994496 bytes, 48000 Hz, 1 channel, duration 31.2 s, first sample inferred, start-offset uncertainty 0.25 s.
+- Start offset: -0.159147024 s.
+- Estimated drift: 0.18 s.
+- Numeric drift tolerance recorded by smoke: 0.23 s.
+- Option A result: fail, because 0.18 s drift is greater than the required <= 0.10 s threshold.
+
+Run 2:
+
+- Date: 2026-05-15T01:59:48Z.
+- Command: `swift run dual-capture-smoke 30`.
+- Exit: 2, because the smoke completed and produced metadata but Option A failed the pass threshold.
+- Metadata: `.tmp/capture-smoke/dual-metadata.json`.
+- System output: `.tmp/capture-smoke/dual-system.wav`, 6029056 bytes, 48000 Hz, 2 channels, duration 31.38 s, first sample observed, first sample offset 0.096593976 s.
+- Microphone output: `.tmp/capture-smoke/dual-microphone.wav`, 5998592 bytes, 48000 Hz, 1 channel, duration 31.221333333 s, first sample inferred, start-offset uncertainty 0.25 s.
+- Start offset: -0.141470909 s.
+- Estimated drift: 0.158666667 s.
+- Numeric drift tolerance recorded by smoke: 0.208666667 s.
+- Option A result: fail, because 0.158666667 s drift is greater than the required <= 0.10 s threshold.
+
+Merge policy decision from the smoke assessment: transcript merge uses per-track timestamp offsets; derived mixed audio may use silence padding when needed and must never replace separated source tracks.
+
+### 30-Second Option B Unified ScreenCaptureKit Timing Smoke
+
+Run 1:
+
+- Date: 2026-05-15T02:05:59Z.
+- Command: `swift run unified-capture-smoke 30`.
+- Exit: 0.
+- Metadata: `.tmp/capture-smoke/unified-metadata.json`.
+- System output: `.tmp/capture-smoke/unified-system.wav`, 6029056 bytes, 48000 Hz, 2 channels, duration 31.38 s, first sample observed, first sample offset 0.106163025 s.
+- Microphone output: `.tmp/capture-smoke/unified-microphone.wav`, 3007488 bytes, 48000 Hz, 1 channel, duration 31.285333333 s, first sample observed, first sample offset 0.204558015 s.
+- Start offset: -0.098394990 s.
+- Start-offset uncertainty: 0 s.
+- Estimated drift: 0.094666667 s.
+- Numeric drift tolerance recorded by smoke: 0.144666667 s.
+- Option B result: pass, because observed microphone timing eliminates inferred-start uncertainty and drift is <= 0.10 s.
+
+Run 2:
+
+- Date: 2026-05-15T02:09:01Z.
+- Command: `swift run unified-capture-smoke 30`.
+- Exit: 0.
+- Metadata: `.tmp/capture-smoke/unified-metadata.json`.
+- System output: `.tmp/capture-smoke/unified-system.wav`, 6029056 bytes, 48000 Hz, 2 channels, duration 31.38 s, first sample observed, first sample offset 0.103517056 s.
+- Microphone output: `.tmp/capture-smoke/unified-microphone.wav`, 3010560 bytes, 48000 Hz, 1 channel, duration 31.317333333 s, first sample observed, first sample offset 0.163922071 s.
+- Start offset: -0.060405016 s.
+- Start-offset uncertainty: 0 s.
+- Estimated drift: 0.062666667 s.
+- Numeric drift tolerance recorded by smoke: 0.112666667 s.
+- Option B result: pass, because observed microphone timing eliminates inferred-start uncertainty and drift is <= 0.10 s.
+
+Provider decision: default `NativeMacCaptureProvider` now uses the unified ScreenCaptureKit recorder bridge for system and microphone capture, while still requiring the explicit `captureGatePassed: true` construction gate before start can be used by app flows.
+
 ## Verification Evidence
 
 Baseline before concurrent source-scope edits:
@@ -75,6 +137,17 @@ Current final verification after shared source-scope fixes:
 - Command: `swift build`
 - Result: PASS on 2026-05-15T01:38Z; debug build completed.
 
+Current Option A/Option B assessment verification:
+
+- Command: `swift build`
+- Result: PASS on 2026-05-15T02:08Z.
+- Command: `swift test`
+- Result: PASS on 2026-05-15T02:08Z; 22 tests in 8 suites passed.
+- Command: `swift run dual-capture-smoke 30`
+- Result: completed twice and produced dual WAV files plus metadata, but exited 2 because Option A drift threshold failed.
+- Command: `swift run unified-capture-smoke 30`
+- Result: completed twice and produced dual WAV files plus metadata; latest run exited 0 with drift 0.062666667 s and start-offset uncertainty 0 s.
+
 ## Local-Only Constraints
 
 - Use SwiftPM project-local `.build` outputs.
@@ -85,9 +158,7 @@ Current final verification after shared source-scope fixes:
 
 ## Remaining Gate Work
 
-- Record per-track sample rate, channel count, first-sample timestamp, start offset, and duration from the actual capture session metadata.
-- Measure start offset and drift from at least one same-session dual-track recording.
-- Define numeric drift tolerance for transcript merge/export.
-- Decide whether transcript merge uses timestamp offsets or silence padding.
-- Wire the native provider/coordinator only after metadata and drift evidence is available.
-- Re-run and record `swift test` and `swift build` after the provider/coordinator slice lands.
+- Keep app flows on the unified ScreenCaptureKit provider path; do not revive the split-recorder path for broad UI/transcription integration unless a future gate rerun proves it below threshold.
+- Add app-level entitlements/Info.plist packaging documentation before distributing outside SwiftPM smoke mode.
+- Re-run `swift test`, `swift build`, and `swift run unified-capture-smoke 30` after any provider, writer, or timestamp-policy change.
+- Keep the merge policy as timestamp offsets for transcript merge; use silence padding only for derived mixed audio if needed.

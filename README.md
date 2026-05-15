@@ -31,7 +31,7 @@ Native live capture is intentionally gated at the capture layer. Phase 1/2 captu
 .omx/plans/capture-gate-mac-native.md
 ```
 
-The current gate status is partially passed: microphone capture, system audio capture, dual smoke output, and SwiftPM test/build verification have evidence; live provider start remains blocked until same-session timing metadata, drift measurement, and a numeric drift tolerance are recorded.
+The current gate status is passed for the unified ScreenCaptureKit path: the split-recorder smoke remains documented as over-threshold, but `unified-capture-smoke` produced observed system/microphone timestamps and drift below the gate threshold. Live app flows should use the unified provider path, not the older split-recorder path.
 
 
 ## Native Capture Gate
@@ -44,13 +44,14 @@ Before enabling app flows that depend on live dual-track capture, update `.omx/p
 - Per-track sample rate, channel count, first-sample timestamp, start offset, duration, measured drift, and drift tolerance.
 - Fresh `swift test` and `swift build` results from this package.
 
-Until those items are complete, `NativeMacCaptureProvider.start` is expected to reject full capture startup and the SwiftUI app should keep live capture-dependent UI disabled.
+`NativeMacCaptureProvider.start` still requires explicit `captureGatePassed: true` construction so app flows cannot accidentally bypass the gate; production UI should only use that enabled provider with the unified ScreenCaptureKit path.
 
 ## Build And Test
 
 ```bash
 swift test
 swift build
+swift run unified-capture-smoke 30
 ```
 
 SwiftPM writes to the project-local `.build` directory.
