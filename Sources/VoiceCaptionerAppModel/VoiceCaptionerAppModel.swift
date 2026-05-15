@@ -35,17 +35,9 @@ public struct TranscriptExportArtifact: Equatable, Sendable, Identifiable {
 }
 
 public enum EditableMarkdownSource: Equatable, Sendable {
-  case empty
+  case none
   case finalMarkdown
   case editedMarkdown
-
-  public var filename: String? {
-    switch self {
-    case .empty: return nil
-    case .finalMarkdown: return VoiceCaptionerAppModel.finalMarkdownFilename
-    case .editedMarkdown: return VoiceCaptionerAppModel.editedMarkdownFilename
-    }
-  }
 }
 
 public struct WhisperExecutableCandidate: Equatable, Sendable {
@@ -162,6 +154,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   @Published public private(set) var activeMeeting: MeetingFolder?
   @Published public private(set) var captureResult: CaptureResult?
   @Published public private(set) var rollingPreview: [TranscriptSegment]
+  @Published public var editableMarkdownText: String
+  @Published public private(set) var editableMarkdownSource: EditableMarkdownSource
+  @Published public private(set) var editableMarkdownMeetingID: String?
+  @Published public private(set) var isEditableMarkdownDirty: Bool
   @Published public private(set) var downloadedModels: [DownloadedWhisperModel]
   @Published public var selectedDownloadedModelPath: String?
   @Published public private(set) var manualModelURL: URL?
@@ -186,6 +182,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   private var transcriptionTask: Task<Void, Never>?
   private var liveTranscriptionTask: Task<Void, Never>?
   private var liveTranscriptionPipeline: LiveTranscriptionPipeline?
+
+  public static let finalMarkdownFilename = "final.md"
+  public static let editedMarkdownFilename = "edited.md"
 
   public static func defaultModelsDirectory(bundle: Bundle = .main) -> URL {
     let bundledModels = bundle.resourceURL?.appending(path: "Models", directoryHint: .isDirectory)
@@ -230,6 +229,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.activeMeeting = nil
     self.captureResult = nil
     self.rollingPreview = []
+    self.editableMarkdownText = ""
+    self.editableMarkdownSource = .none
+    self.editableMarkdownMeetingID = nil
+    self.isEditableMarkdownDirty = false
     self.downloadedModels = []
     self.selectedDownloadedModelPath = nil
     self.manualModelURL = nil
