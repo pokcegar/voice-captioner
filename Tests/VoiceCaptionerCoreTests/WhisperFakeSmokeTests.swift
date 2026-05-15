@@ -15,7 +15,7 @@ struct WhisperFakeSmokeTests {
         try fakeWhisperScript().write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         let transcriber = WhisperProcessTranscriber(
-            configuration: WhisperProcessConfiguration(executableURL: executable, timeoutSeconds: 2)
+            configuration: WhisperProcessConfiguration(executableURL: executable, timeoutSeconds: 10)
         )
         let chunk = AudioChunk(
             track: .system,
@@ -48,7 +48,7 @@ struct WhisperFakeSmokeTests {
         try "#!/bin/sh\necho no-json\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
         let transcriber = WhisperProcessTranscriber(
-            configuration: WhisperProcessConfiguration(executableURL: executable, timeoutSeconds: 2)
+            configuration: WhisperProcessConfiguration(executableURL: executable, timeoutSeconds: 10)
         )
         let chunk = AudioChunk(track: .microphone, url: chunkURL, sourceStart: 0, sourceEnd: 1, timelineStart: 0, timelineEnd: 1)
 

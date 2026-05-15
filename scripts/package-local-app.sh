@@ -9,6 +9,7 @@ APP_DIR="$DIST_DIR/$APP_NAME"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
+MODELS_SRC="${MODELS_SRC:-$ROOT/Models}"
 EXECUTABLE="$ROOT/.build/$CONFIGURATION/voice-captioner-app"
 WHISPER_CLI="${WHISPER_CLI:-$ROOT/Resources/whisper-cli}"
 
@@ -31,6 +32,12 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
 cp "$EXECUTABLE" "$MACOS/VoiceCaptioner"
 cp "$WHISPER_CLI" "$RESOURCES/whisper-cli"
+if [[ -d "$MODELS_SRC" ]]; then
+  mkdir -p "$RESOURCES/Models"
+  find "$MODELS_SRC" -maxdepth 1 -type f \
+    \( -name '*.bin' -o -name '*.gguf' -o -name '*.manifest.json' \) \
+    -exec cp {} "$RESOURCES/Models/" \;
+fi
 chmod +x "$MACOS/VoiceCaptioner" "$RESOURCES/whisper-cli"
 
 cat > "$CONTENTS/Info.plist" <<'PLIST'

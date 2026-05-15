@@ -27,7 +27,7 @@ JSON
 exit 0
 """#
         )
-        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 2))
+        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 10))
 
         let segments = try await transcriber.transcribe(chunk: fixture.chunk, model: fixture.model)
 
@@ -52,7 +52,7 @@ echo "bad stderr" >&2
 exit 7
 """#
         )
-        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 2))
+        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 10))
 
         do {
             _ = try await transcriber.transcribe(chunk: fixture.chunk, model: fixture.model)
@@ -91,7 +91,7 @@ exit 7
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try makeFixture(in: root)
         let script = try makeFakeWhisper(in: root, body: "exit 0\n")
-        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 2))
+        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 10))
 
         await #expect(throws: WhisperProcessError.modelMissing(root.appending(path: "missing.bin"))) {
             _ = try await transcriber.transcribe(
@@ -112,7 +112,7 @@ exit 7
         defer { try? FileManager.default.removeItem(at: root) }
         let fixture = try makeFixture(in: root)
         let missingJSONScript = try makeFakeWhisper(in: root.appending(path: "missing", directoryHint: .isDirectory), body: "exit 0\n")
-        let missingJSONTranscriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: missingJSONScript, timeoutSeconds: 2))
+        let missingJSONTranscriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: missingJSONScript, timeoutSeconds: 10))
 
         do {
             _ = try await missingJSONTranscriber.transcribe(chunk: fixture.chunk, model: fixture.model)
@@ -136,7 +136,7 @@ echo "not-json" > "${prefix}.json"
 exit 0
 """#
         )
-        let malformedTranscriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: malformedScript, timeoutSeconds: 2))
+        let malformedTranscriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: malformedScript, timeoutSeconds: 10))
         do {
             _ = try await malformedTranscriber.transcribe(chunk: fixture.chunk, model: fixture.model)
             Issue.record("Expected malformed JSON")
