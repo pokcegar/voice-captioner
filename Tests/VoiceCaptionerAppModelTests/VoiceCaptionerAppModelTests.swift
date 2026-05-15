@@ -252,8 +252,7 @@ struct VoiceCaptionerAppModelTests {
     let modelURL = models.appending(path: "ggml-small.bin", directoryHint: .notDirectory)
     let executable = root.appending(path: "whisper-cli", directoryHint: .notDirectory)
     try Data("model".utf8).write(to: modelURL)
-    try Data("#!/bin/sh
-".utf8).write(to: executable)
+    try Data("#!/bin/sh\n".utf8).write(to: executable)
     let meeting = try completedMeeting(in: root, title: "Retranscribe")
     try "user edits".write(to: meeting.transcriptDirectory.appending(path: "edited.md"), atomically: true, encoding: .utf8)
     let workflow = FakeTranscriptionWorkflow()
@@ -305,23 +304,41 @@ struct VoiceCaptionerAppModelTests {
     let model = makeAppModel(outputRoot: root)
     model.refreshHistoryPreservingSelection()
 
-    model.selectedMeetingID = meetingB.metadata.id
+    model.selectMeeting(id: meetingB.metadata.id)
     model.updateEditableMarkdownText("still A")
     model.saveEditableMarkdown()
 
-    #expect(try String(contentsOf: meetingA.transcriptDirectory.appending(path: "edited.md"), encoding: .utf8) == "still A")
-    #expect(!FileManager.default.fileExists(atPath: meetingB.transcriptDirectory.appending(path: "edited.md").path))
+    #expect(
+      try String(contentsOf: meetingB.transcriptDirectory.appending(path: "edited.md"), encoding: .utf8) ==
+        "still A")
+    #expect(!FileManager.default.fileExists(atPath: meetingA.transcriptDirectory.appending(path: "edited.md").path))
+  }
+
+  @Test @MainActor func markdownReadFailureDoesNotCrashAndReportsStatus() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let meeting = try completedMeeting(in: root, title: "Broken")
+    let finalURL = meeting.transcriptDirectory.appending(path: "final.md")
+    try FileManager.default.createDirectory(at: finalURL, withIntermediateDirectories: true)
+    let model = makeAppModel(outputRoot: root)
+
+    model.refreshHistoryPreservingSelection()
+
+    #expect(model.editableMarkdownText.isEmpty)
+    #expect(model.editableMarkdownSource == .empty)
+    #expect(model.editableMarkdownStatus != nil)
+    #expect(model.editableMarkdownStatus != nil || !model.status.isEmpty)
   }
 
   @Test @MainActor func localizationHasExplicitInterfaceTranscriptionAndMarkdownLabels() throws {
     #expect(AppStrings(language: .zhHans).text(.interfaceLanguage) == "界面语言")
-    #expect(AppStrings(language: .zhHans).text(.fixedChineseTranscriptionLanguage) == "转写语言：中文")
+    #expect(AppStrings(language: .zhHans).text(.fixedChineseTranscriptionLanguage) == "中文（固定，本地 Whisper 转写）")
     #expect(AppStrings(language: .zhHans).text(.editedMarkdown) == "用户编辑版 Markdown")
-    #expect(AppStrings(language: .en).text(.interfaceLanguage) == "Interface Language")
+    #expect(AppStrings(language: .en).text(.interfaceLanguage) == "Interface language")
     #expect(AppStrings(language: .de).text(.editedMarkdown) == "Bearbeitetes Markdown")
   }
-
 }
+
 
 private actor FakeTranscriptionWorkflow: TranscriptionWorkflow {
   private var runs = 0
