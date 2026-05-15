@@ -108,6 +108,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     @Published public var meetingTitle: String
     @Published public var delaySeconds: TimeInterval
     @Published public var chunkDurationSeconds: TimeInterval
+    @Published public var language: AppLanguage
     @Published public private(set) var meetings: [MeetingFolder]
     @Published public var selectedMeetingID: String?
     @Published public private(set) var permissionStatus: PermissionStatus?
@@ -133,7 +134,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     public init(
         outputRoot: URL = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "VoiceCaptionerMeetings", directoryHint: .isDirectory),
-        meetingTitle: String = "Meeting",
+        meetingTitle: String = "会议",
+        language: AppLanguage = .zhHans,
         delaySeconds: TimeInterval = 30,
         chunkDurationSeconds: TimeInterval = 30,
         store: MeetingStore = MeetingStore(),
@@ -145,6 +147,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     ) {
         self.outputRoot = outputRoot
         self.meetingTitle = meetingTitle
+        self.language = language
         self.delaySeconds = delaySeconds
         self.chunkDurationSeconds = chunkDurationSeconds
         self.store = store
@@ -169,6 +172,12 @@ public final class VoiceCaptionerAppModel: ObservableObject {
 
     deinit {
         transcriptionTask?.cancel()
+    }
+
+    public var strings: AppStrings { AppStrings(language: language) }
+
+    public func setLanguage(_ language: AppLanguage) {
+        self.language = language
     }
 
     public var selectedMeeting: MeetingFolder? {

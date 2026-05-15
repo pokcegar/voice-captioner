@@ -57,6 +57,29 @@ struct VoiceCaptionerAppModelTests {
     }
 
 
+
+    @Test @MainActor func defaultsToChineseAndSwitchesLanguageStrings() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let model = VoiceCaptionerAppModel(
+            outputRoot: root.appending(path: "Meetings", directoryHint: .isDirectory),
+            provider: FakeAudioCaptureProvider(),
+            modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+            transcriptionWorkflow: FakeTranscriptionWorkflow(),
+            defaultWhisperExecutable: nil
+        )
+
+        #expect(model.language == .zhHans)
+        #expect(model.meetingTitle == "会议")
+        #expect(model.strings.text(.startRecording) == "开始录音")
+
+        model.setLanguage(.en)
+        #expect(model.strings.text(.startRecording) == "Start Recording")
+
+        model.setLanguage(.de)
+        #expect(model.strings.text(.startRecording) == "Aufnahme starten")
+    }
+
     @Test @MainActor func initializesWithBundledWhisperExecutableCandidate() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
