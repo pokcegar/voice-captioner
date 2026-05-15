@@ -38,6 +38,14 @@ public enum EditableMarkdownSource: Equatable, Sendable {
   case none
   case finalMarkdown
   case editedMarkdown
+
+  public var filename: String? {
+    switch self {
+    case .empty: return nil
+    case .finalMarkdown: return "final.md"
+    case .editedMarkdown: return "edited.md"
+    }
+  }
 }
 
 public struct WhisperExecutableCandidate: Equatable, Sendable {
