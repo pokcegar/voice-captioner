@@ -30,6 +30,14 @@ VOICE_CAPTIONER_MODEL_MIRROR=hf-mirror scripts/download-whisper-model.sh small
 
 The script writes only under `Models/` and does not install global dependencies.
 
+## Local-Only Model Policy
+
+- Transcription must run through a user-configured local executable and local model path.
+- The app may offer an explicit model download action, but it must never download a model during record, stop, export, or history browsing without a direct user action.
+- Manual model selection is first-class for offline users and for users who keep models outside the repository.
+- Model binaries (`*.bin`, `*.gguf`, partial downloads, and temporary downloads) must stay out of Git. Commit only small manifest/metadata files.
+- Release smoke evidence should name the model tier/path used, but should not require committing the model binary.
+
 Current local note:
 
 - `Models/ggml-large-v3.bin` is incomplete/invalid unless its manifest says otherwise.

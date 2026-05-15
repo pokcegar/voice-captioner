@@ -33,6 +33,19 @@ Native live capture is intentionally gated at the capture layer. Phase 1/2 captu
 
 The current gate status is passed for the unified ScreenCaptureKit path: the split-recorder smoke remains documented as over-threshold, but `unified-capture-smoke` produced observed system/microphone timestamps and drift below the gate threshold. Live app flows should use the unified provider path, not the older split-recorder path.
 
+## V1 Local Workflow
+
+The supported v1 product path is local-only and post-stop transcription oriented:
+
+1. Choose a meeting output root on disk.
+2. Choose a local `whisper.cpp` executable and a local model file from `Models/` or a user-selected path.
+3. Record with the unified ScreenCaptureKit capture path so system audio and microphone audio are written as separated source tracks.
+4. Stop recording before transcription starts.
+5. Generate chunk manifests from the recorded sources, run local Whisper transcription over derived chunks, and keep rolling draft artifacts under the meeting folder.
+6. Finalize transcript exports as Markdown, SRT, and JSON.
+7. Browse folder-indexed meeting history and regenerate transcript/export artifacts from local meeting data.
+
+No cloud transcription, hidden network service, global helper, virtual audio driver, or shell-profile modification is part of v1.
 
 ## Native Capture Gate
 
@@ -55,6 +68,30 @@ swift run unified-capture-smoke 30
 ```
 
 SwiftPM writes to the project-local `.build` directory.
+
+For release integration, also capture smoke evidence for the local transcription path:
+
+```bash
+swift test --filter WhisperProcessTranscriberTests
+swift test --filter RollingTranscriptionPipelineTests
+swift test --filter TranscriptTests
+```
+
+`WhisperProcessTranscriberTests` uses fake local binaries/fixtures and is the fast regression check for the post-stop transcription adapter. Real-model smoke remains manual because it requires a user-selected local `whisper.cpp` binary and model file.
+
+## Release Checklist
+
+Before a release claim, record PASS/FAIL evidence for:
+
+- `swift build` from `voice-captioner/`.
+- `swift test` from `voice-captioner/`.
+- `swift run unified-capture-smoke 30` with microphone and Screen & System Audio Recording permission granted.
+- Fake local Whisper smoke via `swift test --filter WhisperProcessTranscriberTests`.
+- Chunk/pipeline/export regressions via `swift test --filter RollingTranscriptionPipelineTests` and `swift test --filter TranscriptTests`.
+- Manual real-model smoke using a local `whisper.cpp` executable and local model file; do not download models implicitly during the smoke.
+- Manual packaged-app smoke from a signed build: select output folder, grant permissions, record, stop, transcribe locally, export Markdown/SRT/JSON, reopen history, and verify generated artifacts remain inside the selected local folders.
+
+Do not claim a signed packaged release until the signed-app smoke has been performed on the packaged app, not only SwiftPM targets.
 
 ## Environment Safety
 
