@@ -38,21 +38,6 @@ public enum EditableMarkdownSource: Equatable, Sendable {
   case none
   case finalMarkdown
   case editedMarkdown
-  case empty
-}
-
-public enum EditableMarkdownSource: Equatable, Sendable {
-  case empty
-  case finalMarkdown
-  case editedMarkdown
-
-  public var filename: String? {
-    switch self {
-    case .empty: return nil
-    case .finalMarkdown: return "final.md"
-    case .editedMarkdown: return "edited.md"
-    }
-  }
 }
 
 public struct WhisperExecutableCandidate: Equatable, Sendable {
@@ -141,7 +126,7 @@ public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow, LiveTran
 
   private func makeTranscriber(whisperExecutableURL: URL) -> WhisperProcessTranscriber {
     WhisperProcessTranscriber(
-      configuration: WhisperProcessConfiguration(executableURL: whisperExecutableURL)
+      configuration: WhisperProcessConfiguration(executableURL: whisperExecutableURL, language: "zh")
     )
   }
 }
@@ -184,9 +169,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   @Published public private(set) var editableMarkdownMeetingID: String?
   @Published public private(set) var isEditableMarkdownDirty: Bool
   @Published public private(set) var editableMarkdownStatus: String?
-
-  public static let finalMarkdownFilename = "final.md"
-  public static let editedMarkdownFilename = "edited.md"
 
   private let store: MeetingStore
   private let provider: any AudioCaptureProvider
@@ -255,7 +237,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.whisperExecutableSource = defaultWhisperExecutable?.source
     self.transcriptionState = .idle
     self.editableMarkdownText = ""
-    self.editableMarkdownSource = .empty
+    self.editableMarkdownSource = .none
     self.editableMarkdownMeetingID = nil
     self.isEditableMarkdownDirty = false
     self.editableMarkdownStatus = nil
@@ -286,6 +268,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   private func meeting(withID id: String?) -> MeetingFolder? {
     guard let id else { return nil }
     return meetings.first { $0.metadata.id == id }
+  }
+
+  public var canSaveEditableMarkdown: Bool {
+    editableMarkdownMeetingID != nil
   }
 
   public var selectedWhisperModel: WhisperModel? {
@@ -360,8 +346,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       } else {
         nextSelection = meetings.first?.metadata.id
       }
-      selectedMeetingID = nextSelection
-      loadEditableMarkdown(for: meeting(withID: nextSelection))
+      loadEditableMarkdown(for: selectedMeeting)
       status = statusText(.indexedMeetings(count: meetings.count))
     } catch {
       status = statusText(.historyError(error.localizedDescription))
@@ -422,8 +407,95 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     if path != nil { manualModelURL = nil }
   }
 
+  public func selectMeeting(id: String?) {
+    guard id != selectedMeetingID else { return }
+    autosaveEditableMarkdownIfDirty()
+    selectedMeetingID = id
+    loadEditableMarkdown(for: selectedMeeting)
+  }
+
+  public func editedMarkdownURL(for meeting: MeetingFolder) -> URL {
+    meeting.transcriptDirectory.appending(
+      path: Self.editedMarkdownFilename, directoryHint: .notDirectory)
+  }
+
+  public func finalMarkdownURL(for meeting: MeetingFolder) -> URL {
+    meeting.transcriptDirectory.appending(
+      path: Self.finalMarkdownFilename, directoryHint: .notDirectory)
+  }
+
+  public func loadEditableMarkdown(for meeting: MeetingFolder?) {
+    guard let meeting else {
+      editableMarkdownText = ""
+      editableMarkdownSource = .none
+      editableMarkdownMeetingID = nil
+      isEditableMarkdownDirty = false
+      editableMarkdownStatus = nil
+      return
+    }
+
+    editableMarkdownMeetingID = meeting.metadata.id
+    let editedURL = editedMarkdownURL(for: meeting)
+    let finalURL = finalMarkdownURL(for: meeting)
+    do {
+      if FileManager.default.fileExists(atPath: editedURL.path) {
+        editableMarkdownText = try String(contentsOf: editedURL, encoding: .utf8)
+        editableMarkdownSource = .editedMarkdown
+        editableMarkdownStatus = strings.text(.markdownSourceEdited)
+      } else if FileManager.default.fileExists(atPath: finalURL.path) {
+        editableMarkdownText = try String(contentsOf: finalURL, encoding: .utf8)
+        editableMarkdownSource = .finalMarkdown
+        editableMarkdownStatus = strings.text(.markdownSourceFinal)
+      } else {
+        editableMarkdownText = ""
+        editableMarkdownSource = .none
+        editableMarkdownStatus = strings.text(.markdownWaitingForTranscript)
+      }
+      isEditableMarkdownDirty = false
+    } catch {
+      editableMarkdownText = ""
+      editableMarkdownSource = .none
+      isEditableMarkdownDirty = false
+      editableMarkdownStatus = statusText(.editableMarkdownLoadFailed(error.localizedDescription))
+    }
+  }
+
+  public func updateEditableMarkdownText(_ text: String) {
+    guard text != editableMarkdownText else { return }
+    editableMarkdownText = text
+    isEditableMarkdownDirty = true
+    editableMarkdownStatus = strings.text(.markdownUnsavedChanges)
+  }
+
+  public func saveEditableMarkdown() {
+    guard let meetingID = editableMarkdownMeetingID,
+      let meeting = meetings.first(where: { $0.metadata.id == meetingID })
+    else {
+      editableMarkdownStatus = statusText(.editableMarkdownSaveFailed("No loaded meeting"))
+      return
+    }
+
+    do {
+      try FileManager.default.createDirectory(
+        at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+      try editableMarkdownText.write(
+        to: editedMarkdownURL(for: meeting), atomically: true, encoding: .utf8)
+      editableMarkdownSource = .editedMarkdown
+      isEditableMarkdownDirty = false
+      editableMarkdownStatus = statusText(.editableMarkdownSaved)
+    } catch {
+      editableMarkdownStatus = statusText(.editableMarkdownSaveFailed(error.localizedDescription))
+    }
+  }
+
+  public func autosaveEditableMarkdownIfDirty() {
+    guard isEditableMarkdownDirty else { return }
+    saveEditableMarkdown()
+  }
+
   public func startRecording() async {
     guard !isRecording else { return }
+    autosaveEditableMarkdownIfDirty()
     do {
       let title = normalizedMeetingTitle()
       let meeting = try store.createMeeting(
@@ -435,7 +507,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       rollingPreview = []
       transcriptionState = .idle
       isRecording = true
-      selectMeeting(id: meeting.metadata.id)
+      selectedMeetingID = meeting.metadata.id
+      loadEditableMarkdown(for: meeting)
       status = statusText(.recording(meeting.metadata.title))
       startLiveTranscriptionIfPossible(for: meeting)
       refreshHistoryPreservingSelection()
@@ -457,7 +530,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       if var meeting = activeMeeting {
         meeting.metadata = try store.readMetadata(at: meeting.metadataURL)
         activeMeeting = meeting
-        selectMeeting(id: meeting.metadata.id)
+        selectedMeetingID = meeting.metadata.id
+        loadEditableMarkdown(for: meeting)
         if rollingPreview.isEmpty {
           rollingPreview = previewSegments(from: result)
         }
@@ -556,8 +630,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       transcriptionState = .completed(segmentCount: result.finalSegments.count)
       status = statusText(.transcriptionComplete)
       refreshHistoryPreservingSelection()
-      loadEditableMarkdown(for: selectedMeeting)
-      loadEditableMarkdown(for: selectedMeeting)
+      loadEditableMarkdown(for: meetings.first { $0.metadata.id == meeting.metadata.id } ?? meeting)
     } catch is CancellationError {
       transcriptionState = .cancelled
       status = statusText(.localTranscriptionCancelled)
@@ -676,10 +749,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     guard let meeting = meeting ?? selectedMeeting else { return [] }
     let directory = meeting.transcriptDirectory
     let artifacts = [
-      ("Machine Markdown", finalMarkdownURL(for: meeting)),
+      ("Machine Markdown", directory.appending(path: "final.md", directoryHint: .notDirectory)),
       ("SRT", directory.appending(path: "final.srt", directoryHint: .notDirectory)),
       ("JSON", directory.appending(path: "final.json", directoryHint: .notDirectory)),
-      ("Edited Markdown", editedMarkdownURL(for: meeting)),
+      ("Edited Markdown", directory.appending(path: "edited.md", directoryHint: .notDirectory)),
     ]
     return artifacts.map { label, url in
       TranscriptExportArtifact(
@@ -787,9 +860,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case liveTranscriptionUpdated(segmentCount: Int)
     case liveTranscriptionFailed(String)
     case editableMarkdownSaved
-    case editableMarkdownNoMeeting
+    case editableMarkdownLoadFailed(String)
     case editableMarkdownSaveFailed(String)
-    case markdownReadFailed(String)
   }
 
   private func statusText(_ message: AppStatusMessage) -> String {
@@ -857,9 +929,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.zhHans, .liveTranscriptionUpdated(let count)): return "延迟实时转写已更新：\(count) 个草稿片段。"
     case (.zhHans, .liveTranscriptionFailed(let error)): return "延迟实时转写失败：\(error)"
     case (.zhHans, .editableMarkdownSaved): return "用户编辑版 Markdown 已保存。"
-    case (.zhHans, .editableMarkdownNoMeeting): return "没有可保存的已加载会议。"
-    case (.zhHans, .editableMarkdownSaveFailed(let error)): return "保存用户编辑版 Markdown 失败：\(error)"
-    case (.zhHans, .markdownReadFailed(let error)): return "读取 Markdown 失败：\(error)"
+    case (.zhHans, .editableMarkdownLoadFailed(let error)): return "读取 Markdown 编辑内容失败：\(error)"
+    case (.zhHans, .editableMarkdownSaveFailed(let error)): return "保存 Markdown 编辑内容失败：\(error)"
 
     case (.en, .ready): return "Ready — local-only recording and transcription"
     case (.en, .noDownloadedModels(let needsExecutable)):
@@ -913,9 +984,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       return "Delayed live transcription updated: \(count) draft segment(s)."
     case (.en, .liveTranscriptionFailed(let error)): return "Delayed live transcription failed: \(error)"
     case (.en, .editableMarkdownSaved): return "Edited Markdown saved."
-    case (.en, .editableMarkdownNoMeeting): return "No loaded meeting to save."
-    case (.en, .editableMarkdownSaveFailed(let error)): return "Edited Markdown save failed: \(error)"
-    case (.en, .markdownReadFailed(let error)): return "Markdown read failed: \(error)"
+    case (.en, .editableMarkdownLoadFailed(let error)):
+      return "Failed to load editable Markdown: \(error)"
+    case (.en, .editableMarkdownSaveFailed(let error)):
+      return "Failed to save editable Markdown: \(error)"
 
     case (.de, .ready): return "Bereit — lokale Aufnahme und Transkription"
     case (.de, .noDownloadedModels(let needsExecutable)):
@@ -975,11 +1047,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       return "Verzögerte Live-Transkription aktualisiert: \(count) Entwurfssegment(e)."
     case (.de, .liveTranscriptionFailed(let error)):
       return "Verzögerte Live-Transkription fehlgeschlagen: \(error)"
-    case (.de, .editableMarkdownSaved): return "Bearbeitete Markdown-Datei gespeichert."
-    case (.de, .editableMarkdownNoMeeting): return "Keine geladene Besprechung zum Speichern."
+    case (.de, .editableMarkdownSaved): return "Bearbeitetes Markdown gespeichert."
+    case (.de, .editableMarkdownLoadFailed(let error)):
+      return "Bearbeitbares Markdown konnte nicht geladen werden: \(error)"
     case (.de, .editableMarkdownSaveFailed(let error)):
-      return "Speichern der bearbeiteten Markdown-Datei fehlgeschlagen: \(error)"
-    case (.de, .markdownReadFailed(let error)): return "Markdown konnte nicht gelesen werden: \(error)"
+      return "Bearbeitbares Markdown konnte nicht gespeichert werden: \(error)"
     }
   }
 
