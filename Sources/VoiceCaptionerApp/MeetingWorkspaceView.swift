@@ -5,8 +5,6 @@ import VoiceCaptionerCore
 
 struct MeetingWorkspaceView: View {
   @ObservedObject var viewModel: VoiceCaptionerAppModel
-  let openMeetingFolder: (MeetingFolder) -> Void
-  let openArtifact: (TranscriptExportArtifact) -> Void
 
   private var strings: AppStrings { viewModel.strings }
 
@@ -28,15 +26,16 @@ struct MeetingWorkspaceView: View {
   }
 
   private var workspaceHeader: some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(alignment: .leading, spacing: 6) {
       Text(strings.text(.currentMeetingWorkspace))
         .font(.largeTitle.bold())
+      Text(viewModel.selectedMeeting?.metadata.title ?? "VoiceCaptioner")
+        .font(.title3)
+      Text(strings.text(.fixedChineseTranscriptionLanguage))
+        .font(.caption)
+        .foregroundStyle(.secondary)
       Text(strings.text(.tagline))
         .foregroundStyle(.secondary)
-      LabeledContent(strings.text(.transcriptionLanguage)) {
-        Text(strings.text(.fixedChineseTranscriptionLanguage))
-          .font(.callout.weight(.semibold))
-      }
     }
   }
 
@@ -48,7 +47,6 @@ struct MeetingWorkspaceView: View {
         } label: {
           Label(strings.text(.startRecording), systemImage: "record.circle")
         }
-        .buttonStyle(.borderedProminent)
         .disabled(!viewModel.canStartRecording)
 
         Button {
@@ -61,20 +59,18 @@ struct MeetingWorkspaceView: View {
         Button {
           viewModel.beginTranscription()
         } label: {
-          Label(strings.text(.transcribeSelectedMeeting), systemImage: "waveform.and.magnifyingglass")
+          Label(
+            strings.text(.transcribeSelectedMeeting), systemImage: "waveform.and.magnifyingglass")
         }
         .disabled(!viewModel.canTranscribeSelectedMeeting)
 
         Button(strings.text(.cancel)) { viewModel.cancelTranscription() }
           .disabled(!viewModel.transcriptionState.isRunning)
       }
-
       transcriptionStateText
         .font(.caption)
         .foregroundStyle(.secondary)
     }
-    .padding()
-    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
   }
 
   @ViewBuilder
@@ -103,10 +99,10 @@ struct MeetingWorkspaceView: View {
           .foregroundStyle(.secondary)
           .textSelection(.enabled)
         HStack {
-          Button(strings.text(.openFolder)) { openMeetingFolder(meeting) }
+          Button(strings.text(.openFolder)) { NSWorkspace.shared.open(meeting.rootURL) }
           ForEach(viewModel.exportArtifacts(for: meeting)) { artifact in
             Button(strings.text(.openArtifact(localizedArtifactLabel(artifact.label)))) {
-              openArtifact(artifact)
+              NSWorkspace.shared.open(artifact.url)
             }
             .disabled(!artifact.exists)
           }
@@ -116,7 +112,7 @@ struct MeetingWorkspaceView: View {
             "\(trackKindLabel(track.kind)): \(track.relativePath), \(track.duration.map { String(format: "%.3fs", $0) } ?? strings.text(.durationPending)), \(timingConfidenceLabel(track.timingConfidence))"
           )
           .font(.caption)
-        }
+      }
       } else {
         Text(strings.text(.noMeetingSelected))
           .foregroundStyle(.secondary)
