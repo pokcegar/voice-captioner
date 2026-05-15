@@ -1,0 +1,14 @@
+{
+  "filename": "ggml-large-v3.bin",
+  "path": "/Users/zzy/project/voicewisper/voice-captioner/Models/ggml-large-v3.bin",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+  "official_reference_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+  "size_bytes": 719224280,
+  "expected_size_bytes": 3095033483,
+  "sha256": "b6e33866bbf136bf9bafa9ede0a35253acaea16223f325ecf1d93f51385f4146",
+  "expected_sha256": "64d1821c6f81028e2e85abeda055c1ad6ef73b06d2f797a995483144535d1e2",
+  "size_matches_official_metadata": false,
+  "sha256_matches_official_metadata": false,
+  "status": "incomplete_or_invalid_download",
+  "note": "Download was stopped before completion. Do not use this file as a valid large-v3 model."
+}

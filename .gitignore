@@ -1,0 +1,9 @@
+.build/
+.swiftpm/
+.tmp/
+.tmp
+.DS_Store
+Models/*.bin
+Models/*.gguf
+Models/*.part
+Models/*.tmp
