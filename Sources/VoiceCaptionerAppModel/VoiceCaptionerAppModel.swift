@@ -28,6 +28,52 @@ public struct TranscriptExportArtifact: Equatable, Sendable, Identifiable {
     }
 }
 
+public struct WhisperExecutableCandidate: Equatable, Sendable {
+    public var url: URL
+    public var source: String
+
+    public init(url: URL, source: String) {
+        self.url = url
+        self.source = source
+    }
+}
+
+public enum WhisperExecutableLocator {
+    public static func bundledExecutable(bundle: Bundle = .main) -> WhisperExecutableCandidate? {
+        let candidates = [
+            bundle.url(forResource: "whisper-cli", withExtension: nil),
+            bundle.url(forResource: "main", withExtension: nil),
+            bundle.resourceURL?.appending(path: "whisper-cli", directoryHint: .notDirectory),
+            bundle.resourceURL?.appending(path: "main", directoryHint: .notDirectory)
+        ].compactMap { $0 }
+
+        guard let url = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            return nil
+        }
+        return WhisperExecutableCandidate(url: url, source: "bundled")
+    }
+
+    public static func packageResourceExecutable(projectRoot: URL = URL(filePath: FileManager.default.currentDirectoryPath)) -> WhisperExecutableCandidate? {
+        let candidates = [
+            projectRoot.appending(path: "Resources/whisper-cli", directoryHint: .notDirectory),
+            projectRoot.appending(path: "Resources/main", directoryHint: .notDirectory),
+            projectRoot.appending(path: ".build/debug/whisper-cli", directoryHint: .notDirectory),
+            projectRoot.appending(path: ".build/release/whisper-cli", directoryHint: .notDirectory)
+        ]
+        guard let url = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else {
+            return nil
+        }
+        return WhisperExecutableCandidate(url: url, source: "project")
+    }
+
+    public static func firstAvailable(
+        bundle: Bundle = .main,
+        projectRoot: URL = URL(filePath: FileManager.default.currentDirectoryPath)
+    ) -> WhisperExecutableCandidate? {
+        bundledExecutable(bundle: bundle) ?? packageResourceExecutable(projectRoot: projectRoot)
+    }
+}
+
 public protocol TranscriptionWorkflow: Sendable {
     func run(
         meeting: MeetingFolder,
@@ -74,6 +120,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     @Published public var selectedDownloadedModelPath: String?
     @Published public private(set) var manualModelURL: URL?
     @Published public private(set) var whisperExecutableURL: URL?
+    @Published public private(set) var whisperExecutableSource: String?
     @Published public private(set) var transcriptionState: TranscriptionWorkflowState
 
     private let store: MeetingStore
@@ -93,7 +140,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
         provider: any AudioCaptureProvider = NativeMacCaptureProvider(captureGatePassed: true),
         modelsDirectory: URL = URL(filePath: FileManager.default.currentDirectoryPath)
             .appending(path: "Models", directoryHint: .isDirectory),
-        transcriptionWorkflow: any TranscriptionWorkflow = LocalWhisperTranscriptionWorkflow()
+        transcriptionWorkflow: any TranscriptionWorkflow = LocalWhisperTranscriptionWorkflow(),
+        defaultWhisperExecutable: WhisperExecutableCandidate? = WhisperExecutableLocator.firstAvailable()
     ) {
         self.outputRoot = outputRoot
         self.meetingTitle = meetingTitle
@@ -114,7 +162,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
         self.downloadedModels = []
         self.selectedDownloadedModelPath = nil
         self.manualModelURL = nil
-        self.whisperExecutableURL = nil
+        self.whisperExecutableURL = defaultWhisperExecutable?.url
+        self.whisperExecutableSource = defaultWhisperExecutable?.source
         self.transcriptionState = .idle
     }
 
@@ -157,9 +206,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
             if selectedDownloadedModelPath == nil, let recommended = downloadedModels.first {
                 selectedDownloadedModelPath = recommended.model.localPath.path
             }
+            let executableHint = whisperExecutableURL == nil ? " Choose a bundled or manual whisper.cpp executable." : ""
             status = downloadedModels.isEmpty
-                ? "No downloaded Whisper models found; choose a local .bin/.gguf model."
-                : "Loaded \(downloadedModels.count) local Whisper model(s)."
+                ? "No downloaded Whisper models found; choose a local .bin/.gguf model.\(executableHint)"
+                : "Loaded \(downloadedModels.count) local Whisper model(s).\(executableHint)"
         } catch {
             downloadedModels = []
             status = "Model scan failed: \(error.localizedDescription)"
@@ -195,7 +245,20 @@ public final class VoiceCaptionerAppModel: ObservableObject {
 
     public func setWhisperExecutable(_ url: URL) {
         whisperExecutableURL = url
-        status = "Using local Whisper executable: \(url.lastPathComponent)"
+        whisperExecutableSource = "manual"
+        status = "Using manual local Whisper executable: \(url.lastPathComponent)"
+    }
+
+    public func useDefaultWhisperExecutable() {
+        if let candidate = WhisperExecutableLocator.firstAvailable() {
+            whisperExecutableURL = candidate.url
+            whisperExecutableSource = candidate.source
+            status = "Using \(candidate.source) Whisper executable: \(candidate.url.lastPathComponent)"
+        } else {
+            whisperExecutableURL = nil
+            whisperExecutableSource = nil
+            status = "No bundled whisper.cpp executable found; choose one manually."
+        }
     }
 
     public func setManualModel(_ url: URL) {

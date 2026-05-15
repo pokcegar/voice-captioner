@@ -67,6 +67,19 @@ swift build
 swift run unified-capture-smoke 30
 ```
 
+## Local App Bundle
+
+For double-click local use, build or copy `whisper.cpp`'s `whisper-cli` into `Resources/whisper-cli`, then package:
+
+```bash
+cp /path/to/whisper-cli Resources/whisper-cli
+chmod +x Resources/whisper-cli
+scripts/package-local-app.sh
+open dist/VoiceCaptioner.app
+```
+
+The app prefers the bundled `Contents/Resources/whisper-cli` automatically. The settings UI still keeps **Choose…** as a manual fallback if you want to override the executable. Downloaded model binaries remain local in `Models/` and are selected by the app/model picker; they are intentionally ignored by Git.
+
 SwiftPM writes to the project-local `.build` directory.
 
 For release integration, also capture smoke evidence for the local transcription path:

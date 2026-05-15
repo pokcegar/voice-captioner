@@ -56,6 +56,26 @@ struct VoiceCaptionerAppModelTests {
         #expect(model.rollingPreview.map(\.sourceTrack) == [.system, .microphone])
     }
 
+
+    @Test @MainActor func initializesWithBundledWhisperExecutableCandidate() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let executable = root.appending(path: "whisper-cli", directoryHint: .notDirectory)
+        try Data("#!/bin/sh\n".utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+
+        let model = VoiceCaptionerAppModel(
+            outputRoot: root.appending(path: "Meetings", directoryHint: .isDirectory),
+            provider: FakeAudioCaptureProvider(),
+            modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+            transcriptionWorkflow: FakeTranscriptionWorkflow(),
+            defaultWhisperExecutable: WhisperExecutableCandidate(url: executable, source: "bundled")
+        )
+
+        #expect(model.whisperExecutableURL == executable)
+        #expect(model.whisperExecutableSource == "bundled")
+    }
+
     @Test @MainActor func transcribeSelectedMeetingRequiresLocalExecutableAndWritesExports() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

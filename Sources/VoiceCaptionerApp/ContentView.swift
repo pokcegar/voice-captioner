@@ -100,11 +100,14 @@ struct ContentView: View {
         Form {
             Section("Local Whisper") {
                 LabeledContent("whisper.cpp executable") {
-                    HStack {
-                        Text(viewModel.whisperExecutableURL?.path ?? "Choose a local whisper.cpp executable")
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(whisperExecutableLabel)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        Button("Choose…", action: chooseWhisperExecutable)
+                        HStack {
+                            Button("Use Bundled", action: viewModel.useDefaultWhisperExecutable)
+                            Button("Choose…", action: chooseWhisperExecutable)
+                        }
                     }
                 }
                 LabeledContent("Downloaded model") {
@@ -264,6 +267,14 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var whisperExecutableLabel: String {
+        guard let url = viewModel.whisperExecutableURL else {
+            return "No bundled executable found; choose a local whisper.cpp executable"
+        }
+        let source = viewModel.whisperExecutableSource ?? "manual"
+        return "\(source): \(url.path)"
     }
 
     private func chooseOutputRoot() {

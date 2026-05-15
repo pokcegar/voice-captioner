@@ -7,3 +7,5 @@ Models/*.bin
 Models/*.gguf
 Models/*.part
 Models/*.tmp
+Resources/whisper-cli
+dist/

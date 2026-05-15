@@ -9,7 +9,8 @@ VoiceCaptioner is local-first. Packaging must preserve the same boundaries used 
 - User-granted microphone permission.
 - User-granted Screen & System Audio Recording permission for the packaged app.
 - User-selected meeting output folder for recordings, chunks, transcripts, exports, and history index updates.
-- User-selected local `whisper.cpp` executable and model path, or an explicit user-triggered model download into an approved local model directory.
+- Bundled local `whisper.cpp` executable at `Contents/Resources/whisper-cli`, with a user-selected executable as an advanced/manual fallback.
+- User-selected local model path, or an explicit user-triggered model download into an approved local model directory.
 
 ## Info.plist Usage Descriptions
 
@@ -48,7 +49,7 @@ The packaged app should document and exercise this exact local workflow:
 
 1. Open VoiceCaptioner.
 2. Select or create a local meeting output root.
-3. Select a local `whisper.cpp` executable and local model file, or intentionally download a model to a local model directory.
+3. Use the bundled `whisper.cpp` executable by default, or manually select another local executable as a fallback; select a local model file, or intentionally download a model to a local model directory.
 4. Start recording through the unified ScreenCaptureKit provider path.
 5. Stop recording; the app writes separated `audio/system.wav` and `audio/microphone.wav` source tracks plus metadata.
 6. Start post-stop local transcription over derived chunks. The app may show draft progress while chunks complete, but transcription is local process execution only.
@@ -93,7 +94,7 @@ swift test --filter RollingTranscriptionPipelineTests
 swift test --filter TranscriptTests
 ```
 
-Use a real local model smoke before release when a local `whisper.cpp` executable and model file are available:
+Use a real local model smoke before release when the bundled `Contents/Resources/whisper-cli` or a manually selected local executable and model file are available:
 
 1. Confirm the selected executable and model live in user-approved local paths.
 2. Record or provide a short local WAV fixture.
