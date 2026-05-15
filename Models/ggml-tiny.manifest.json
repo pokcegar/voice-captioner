@@ -1,0 +1,10 @@
+{
+  "filename": "ggml-tiny.bin",
+  "path": "/Users/zzy/project/voicewisper/voice-captioner/Models/ggml-tiny.bin",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
+  "proxy": "http://127.0.0.1:7890",
+  "size_bytes": 77691713,
+  "sha256": "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+  "status": "downloaded",
+  "created_at_utc": "2026-05-15T02:54:05Z"
+}

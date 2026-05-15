@@ -1,0 +1,10 @@
+{
+  "filename": "ggml-base.bin",
+  "path": "/Users/zzy/project/voicewisper/voice-captioner/Models/ggml-base.bin",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
+  "proxy": "http://127.0.0.1:7890",
+  "size_bytes": 147951465,
+  "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+  "status": "downloaded",
+  "created_at_utc": "2026-05-15T02:54:05Z"
+}
