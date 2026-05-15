@@ -32,7 +32,7 @@ public struct AppStrings: Sendable {
     }
 
     public enum Key: Sendable {
-        case meetings, refresh, tagline, language, capture, outputRoot, choose, meetingTitle, meetingPlaceholder
+        case meetings, refresh, tagline, language, interfaceLanguage, transcriptionLanguage, fixedChineseTranscriptionLanguage, capture, outputRoot, choose, meetingTitle, meetingPlaceholder
         case rollingDelay, chunkSize, seconds(Int), localWhisper, whisperExecutable, useBundled
         case downloadedModel, manualNone, rescan, manualModel, startRecording, stop, refreshPermissions
         case transcribeSelectedMeeting, cancel, regenerateChunkManifest, idleTranscriptionHelp
@@ -41,6 +41,8 @@ public struct AppStrings: Sendable {
         case transcriptPreviewEmpty, selectedMeeting, openFolder, openArtifact(String), noMeetingSelected
         case noBundledExecutable, sourceBundled, sourceProject, sourceManual, optionalModelPath
         case durationPending, verifiedManifest, statusUnknown
+        case currentMeetingWorkspace, settingsInspector, commonSettings, appSettings, liveDraftSettings, advancedDiagnostics
+        case machineMarkdown, editedMarkdown, markdownEditor, saveEditedMarkdown, markdownSourceFinal, markdownSourceEdited, markdownWaitingForTranscript, unsavedChanges
 
         var zh: String {
             switch self {
@@ -48,6 +50,9 @@ public struct AppStrings: Sendable {
             case .refresh: return "刷新"
             case .tagline: return "本地优先录音，停止后 Whisper 转写，导出并按文件夹保存历史。不会上传云端。"
             case .language: return "语言"
+            case .interfaceLanguage: return "界面语言"
+            case .transcriptionLanguage: return "转写语言"
+            case .fixedChineseTranscriptionLanguage: return "中文（固定，本地 Whisper 转写）"
             case .capture: return "录音"
             case .outputRoot: return "输出目录"
             case .choose: return "选择…"
@@ -93,6 +98,20 @@ public struct AppStrings: Sendable {
             case .durationPending: return "时长待定"
             case .verifiedManifest: return "已验证清单"
             case .statusUnknown: return "未知"
+            case .currentMeetingWorkspace: return "当前会议工作区"
+            case .settingsInspector: return "设置检查器"
+            case .commonSettings: return "常用设置"
+            case .appSettings: return "应用设置"
+            case .liveDraftSettings: return "延迟实时草稿"
+            case .advancedDiagnostics: return "高级诊断"
+            case .machineMarkdown: return "机器 Markdown"
+            case .editedMarkdown: return "用户编辑版 Markdown"
+            case .markdownEditor: return "Markdown 编辑器"
+            case .saveEditedMarkdown: return "保存编辑版"
+            case .markdownSourceFinal: return "来源：机器 final.md（保存会写入 edited.md，不覆盖原文）"
+            case .markdownSourceEdited: return "来源：用户 edited.md"
+            case .markdownWaitingForTranscript: return "暂无 Markdown。转写完成后会载入 final.md，也可以先在这里记录笔记。"
+            case .unsavedChanges: return "有未保存修改，将在切换会议前自动保存。"
             }
         }
 
@@ -102,6 +121,9 @@ public struct AppStrings: Sendable {
             case .refresh: return "Refresh"
             case .tagline: return "Local-first recording, post-stop Whisper transcription, exports, and folder-indexed history. No cloud processing."
             case .language: return "Language"
+            case .interfaceLanguage: return "Interface language"
+            case .transcriptionLanguage: return "Transcription language"
+            case .fixedChineseTranscriptionLanguage: return "Chinese (fixed, local Whisper transcription)"
             case .capture: return "Capture"
             case .outputRoot: return "Output root"
             case .choose: return "Choose…"
@@ -147,6 +169,20 @@ public struct AppStrings: Sendable {
             case .durationPending: return "duration pending"
             case .verifiedManifest: return "verified manifest"
             case .statusUnknown: return "unknown"
+            case .currentMeetingWorkspace: return "Current Meeting Workspace"
+            case .settingsInspector: return "Settings Inspector"
+            case .commonSettings: return "Common settings"
+            case .appSettings: return "App settings"
+            case .liveDraftSettings: return "Delayed live drafts"
+            case .advancedDiagnostics: return "Advanced diagnostics"
+            case .machineMarkdown: return "Machine Markdown"
+            case .editedMarkdown: return "Edited Markdown"
+            case .markdownEditor: return "Markdown editor"
+            case .saveEditedMarkdown: return "Save Edited Markdown"
+            case .markdownSourceFinal: return "Source: machine final.md (saving writes edited.md, never overwrites original)"
+            case .markdownSourceEdited: return "Source: user edited.md"
+            case .markdownWaitingForTranscript: return "No Markdown yet. final.md loads after transcription, or you can start notes here."
+            case .unsavedChanges: return "Unsaved changes will autosave before switching meetings."
             }
         }
 
@@ -156,6 +192,9 @@ public struct AppStrings: Sendable {
             case .refresh: return "Aktualisieren"
             case .tagline: return "Lokale Aufnahme, Whisper-Transkription nach dem Stopp, Exporte und ordnerbasierter Verlauf. Keine Cloud-Verarbeitung."
             case .language: return "Sprache"
+            case .interfaceLanguage: return "Oberflächensprache"
+            case .transcriptionLanguage: return "Transkriptionssprache"
+            case .fixedChineseTranscriptionLanguage: return "Chinesisch (fest, lokale Whisper-Transkription)"
             case .capture: return "Aufnahme"
             case .outputRoot: return "Ausgabeordner"
             case .choose: return "Auswählen…"
@@ -201,6 +240,20 @@ public struct AppStrings: Sendable {
             case .durationPending: return "Dauer ausstehend"
             case .verifiedManifest: return "Manifest geprüft"
             case .statusUnknown: return "unbekannt"
+            case .currentMeetingWorkspace: return "Aktueller Besprechungsbereich"
+            case .settingsInspector: return "Einstellungsbereich"
+            case .commonSettings: return "Allgemeine Einstellungen"
+            case .appSettings: return "App-Einstellungen"
+            case .liveDraftSettings: return "Verzögerte Live-Entwürfe"
+            case .advancedDiagnostics: return "Erweiterte Diagnose"
+            case .machineMarkdown: return "Maschinen-Markdown"
+            case .editedMarkdown: return "Bearbeitetes Markdown"
+            case .markdownEditor: return "Markdown-Editor"
+            case .saveEditedMarkdown: return "Bearbeitetes Markdown speichern"
+            case .markdownSourceFinal: return "Quelle: maschinelles final.md (Speichern schreibt edited.md, Original bleibt erhalten)"
+            case .markdownSourceEdited: return "Quelle: Benutzerdatei edited.md"
+            case .markdownWaitingForTranscript: return "Noch kein Markdown. final.md wird nach der Transkription geladen; Notizen sind hier möglich."
+            case .unsavedChanges: return "Ungespeicherte Änderungen werden vor dem Wechsel automatisch gespeichert."
             }
         }
     }
