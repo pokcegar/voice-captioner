@@ -10,6 +10,7 @@ CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 MODELS_SRC="${MODELS_SRC:-$ROOT/Models}"
+BUNDLED_MODELS="${BUNDLED_MODELS:-tiny}"
 EXECUTABLE="$ROOT/.build/$CONFIGURATION/voice-captioner-app"
 WHISPER_CLI="${WHISPER_CLI:-$ROOT/Resources/whisper-cli}"
 
@@ -32,11 +33,33 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
 cp "$EXECUTABLE" "$MACOS/VoiceCaptioner"
 cp "$WHISPER_CLI" "$RESOURCES/whisper-cli"
-if [[ -d "$MODELS_SRC" ]]; then
+if [[ -d "$MODELS_SRC" && "$BUNDLED_MODELS" != "none" ]]; then
   mkdir -p "$RESOURCES/Models"
-  find "$MODELS_SRC" -maxdepth 1 -type f \
-    \( -name '*.bin' -o -name '*.gguf' -o -name '*.manifest.json' \) \
-    -exec cp {} "$RESOURCES/Models/" \;
+  if [[ "$BUNDLED_MODELS" == "all" ]]; then
+    find "$MODELS_SRC" -maxdepth 1 -type f \
+      \( -name '*.bin' -o -name '*.gguf' -o -name '*.manifest.json' \) \
+      -exec cp {} "$RESOURCES/Models/" \;
+  else
+    IFS=', ' read -r -a MODEL_NAMES <<< "$BUNDLED_MODELS"
+    for model in "${MODEL_NAMES[@]}"; do
+      [[ -z "$model" ]] && continue
+      copied=0
+      for ext in bin gguf; do
+        source_model="$MODELS_SRC/ggml-${model}.${ext}"
+        if [[ -f "$source_model" ]]; then
+          cp "$source_model" "$RESOURCES/Models/"
+          copied=1
+        fi
+      done
+      source_manifest="$MODELS_SRC/ggml-${model}.manifest.json"
+      if [[ -f "$source_manifest" ]]; then
+        cp "$source_manifest" "$RESOURCES/Models/"
+      fi
+      if [[ "$copied" == "0" ]]; then
+        echo "Warning: requested bundled model not found: ggml-${model}.bin/.gguf" >&2
+      fi
+    done
+  fi
 fi
 chmod +x "$MACOS/VoiceCaptioner" "$RESOURCES/whisper-cli"
 
