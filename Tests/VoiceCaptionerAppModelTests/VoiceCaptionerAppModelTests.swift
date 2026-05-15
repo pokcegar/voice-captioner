@@ -178,6 +178,269 @@ struct VoiceCaptionerAppModelTests {
     #expect(exports.allSatisfy { $0.exists })
     #expect(await workflow.runCount() == 1)
   }
+
+  @Test @MainActor func loadsFinalMarkdownAsEditableDraftWhenNoEditedMarkdownExists() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meeting = try store.createMeeting(outputRoot: root, title: "FinalFirst")
+    try FileManager.default.createDirectory(
+      at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    let finalMarkdown = "## Final markdown text"
+    try finalMarkdown.write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+
+    model.refreshHistoryPreservingSelection()
+
+    #expect(model.selectedMeeting?.metadata.id == meeting.metadata.id)
+    #expect(model.editableMarkdownText == finalMarkdown)
+    #expect(model.editableMarkdownSource == .finalMarkdown)
+  }
+
+  @Test @MainActor func savingEditableMarkdownWritesEditedMarkdownWithoutChangingFinal() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meeting = try store.createMeeting(outputRoot: root, title: "EditedSave")
+    try FileManager.default.createDirectory(
+      at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    let finalMarkdown = "Final content A"
+    try finalMarkdown.write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+    model.refreshHistoryPreservingSelection()
+    model.updateEditableMarkdownText("Edited content B")
+    model.saveEditableMarkdown()
+
+    let editedPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename)
+    let finalPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
+    let editedMarkdown = try String(contentsOf: editedPath, encoding: .utf8)
+    let finalMarkdownAfter = try String(contentsOf: finalPath, encoding: .utf8)
+
+    #expect(editedMarkdown == "Edited content B")
+    #expect(finalMarkdownAfter == finalMarkdown)
+    #expect(model.editableMarkdownSource == .editedMarkdown)
+    #expect(!model.isEditableMarkdownDirty)
+  }
+
+  @Test @MainActor func loadsEditedMarkdownBeforeFinalMarkdown() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meeting = try store.createMeeting(outputRoot: root, title: "Priority")
+    try FileManager.default.createDirectory(
+      at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    try "Final content A".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+    try "Edited content B".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+    model.refreshHistoryPreservingSelection()
+
+    #expect(model.editableMarkdownText == "Edited content B")
+    #expect(model.editableMarkdownSource == .editedMarkdown)
+  }
+
+  @Test @MainActor func exportArtifactsIncludesEditedMarkdown() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meeting = try store.createMeeting(outputRoot: root, title: "ExportArtifacts")
+    try FileManager.default.createDirectory(
+      at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    let finalPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
+    let srtPath = meeting.transcriptDirectory.appending(path: "final.srt")
+    let jsonPath = meeting.transcriptDirectory.appending(path: "final.json")
+    let editedPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename)
+    try "final md".write(to: finalPath, atomically: true, encoding: .utf8)
+    try "srt".write(to: srtPath, atomically: true, encoding: .utf8)
+    try "json".write(to: jsonPath, atomically: true, encoding: .utf8)
+    try "edited md".write(to: editedPath, atomically: true, encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+    model.refreshHistoryPreservingSelection()
+
+    let artifacts = model.exportArtifacts(for: meeting)
+    let labels = artifacts.map(\ .label)
+    #expect(labels.contains("Machine Markdown"))
+    #expect(labels.contains("SRT"))
+    #expect(labels.contains("JSON"))
+    #expect(labels.contains("Edited Markdown"))
+    #expect(artifacts.first(where: { $0.label == "Machine Markdown" })?.exists == true)
+    #expect(artifacts.first(where: { $0.label == "Edited Markdown" })?.exists == true)
+  }
+
+  @Test @MainActor func transcriptionCompletionDoesNotOverwriteExistingEditedMarkdown() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let models = root.appending(path: "Models", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+    let modelURL = models.appending(path: "ggml-small.bin", directoryHint: .notDirectory)
+    let executable = root.appending(path: "whisper-cli", directoryHint: .notDirectory)
+    try Data("model".utf8).write(to: modelURL)
+    try Data("#!/bin/sh\n".utf8).write(to: executable)
+    let meeting = try MeetingStore().createMeeting(outputRoot: root, title: "NoOverwrite")
+    var metadata = meeting.metadata
+    metadata.status = .complete
+    metadata.tracks = [AudioTrack(
+      id: "system", kind: .system, relativePath: "audio/system.wav", startOffset: 0,
+      timingConfidence: .observed, duration: 1)]
+    try MeetingStore().writeMetadata(metadata, to: meeting.metadataURL)
+    try "Final before".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+    try FileManager.default.createDirectory(at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    try "User edited".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+
+    let workflow = FakeTranscriptionWorkflow()
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: models,
+      transcriptionWorkflow: workflow,
+      liveTranscriptionWorkflow: nil,
+      defaultWhisperExecutable: WhisperExecutableCandidate(url: executable, source: "bundled")
+    )
+    model.refreshAll()
+    model.setManualModel(modelURL)
+    model.setWhisperExecutable(executable)
+
+    await model.transcribeSelectedMeeting()
+
+    let finalAfter = try String(
+      contentsOf: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      encoding: .utf8)
+    let editedAfter = try String(
+      contentsOf: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      encoding: .utf8)
+
+    #expect(finalAfter != "Final before")
+    #expect(editedAfter == "User edited")
+    #expect(model.editableMarkdownSource == .editedMarkdown)
+    #expect(model.editableMarkdownText == editedAfter)
+  }
+
+  @Test @MainActor func selectingAnotherMeetingAutosavesDirtyMarkdownToOriginalMeeting() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meetingA = try store.createMeeting(outputRoot: root, title: "A")
+    let meetingB = try store.createMeeting(outputRoot: root, title: "B")
+    try FileManager.default.createDirectory(at: meetingA.transcriptDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: meetingB.transcriptDirectory, withIntermediateDirectories: true)
+    try "A final".write(to: meetingA.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename), atomically: true, encoding: .utf8)
+    try "B final".write(to: meetingB.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename), atomically: true, encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+    model.refreshAll()
+    model.selectMeeting(id: meetingA.metadata.id)
+    model.updateEditableMarkdownText("A dirty draft")
+
+    model.selectMeeting(id: meetingB.metadata.id)
+
+    let autosavedPath = meetingA.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename)
+    let autosavedText = try String(contentsOf: autosavedPath, encoding: .utf8)
+    #expect(autosavedText == "A dirty draft")
+    #expect(model.selectedMeeting?.metadata.id == meetingB.metadata.id)
+  }
+
+  @Test @MainActor func saveEditableMarkdownWritesToLoadedMeetingNotCurrentSelectionRace() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meetingA = try store.createMeeting(outputRoot: root, title: "A")
+    let meetingB = try store.createMeeting(outputRoot: root, title: "B")
+    try FileManager.default.createDirectory(at: meetingA.transcriptDirectory, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: meetingB.transcriptDirectory, withIntermediateDirectories: true)
+    try "A final".write(to: meetingA.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename), atomically: true, encoding: .utf8)
+    try "B final".write(to: meetingB.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename), atomically: true, encoding: .utf8)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+    model.refreshAll()
+    model.selectMeeting(id: meetingA.metadata.id)
+    model.updateEditableMarkdownText("A dirty text")
+
+    model.selectMeeting(id: meetingB.metadata.id)
+    model.loadEditableMarkdown(for: meetingA)
+    model.updateEditableMarkdownText("A dirty again")
+    model.saveEditableMarkdown()
+
+    let editedA = try String(
+      contentsOf: meetingA.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      encoding: .utf8)
+    let editedBExists = FileManager.default.fileExists(atPath: meetingB.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename).path)
+    #expect(editedA == "A dirty again")
+    #expect(!editedBExists)
+    #expect(model.editableMarkdownMeetingID == meetingA.metadata.id)
+  }
+
+  @Test @MainActor func markdownReadFailureDoesNotCrashAndReportsStatus() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = MeetingStore()
+    let meeting = try store.createMeeting(outputRoot: root, title: "ReadFailure")
+    try FileManager.default.createDirectory(at: meeting.transcriptDirectory, withIntermediateDirectories: true)
+    let finalPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
+    try FileManager.default.createDirectory(at: finalPath, withIntermediateDirectories: true)
+
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: root.appending(path: "Models", directoryHint: .isDirectory),
+      transcriptionWorkflow: FakeTranscriptionWorkflow()
+    )
+
+    model.refreshAll()
+
+    #expect(model.editableMarkdownText.isEmpty)
+    #expect(model.editableMarkdownStatus != nil)
+  }
 }
 
 private actor FakeTranscriptionWorkflow: TranscriptionWorkflow {
