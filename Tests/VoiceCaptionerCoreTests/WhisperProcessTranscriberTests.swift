@@ -4,6 +4,41 @@ import Testing
 
 @Suite("WhisperProcessTranscriber")
 struct WhisperProcessTranscriberTests {
+
+    @Test func transcriberPassesChineseLanguageWithoutTranslationByDefault() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fixture = try makeFixture(in: root)
+        let argsURL = root.appending(path: "args.txt")
+        let script = try makeFakeWhisper(
+            in: root,
+            body: #"""
+printf '%s\n' "$@" > "ARGS_PATH"
+prefix=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-of" ]; then
+    shift
+    prefix="$1"
+  fi
+  shift || true
+done
+cat > "${prefix}.json" <<'JSON'
+{"transcription":[{"timestamps":{"from":"00:00:00,000","to":"00:00:01,000"},"text":" 中文 "}]}
+JSON
+exit 0
+"""#.replacingOccurrences(of: "ARGS_PATH", with: argsURL.path)
+        )
+        let transcriber = WhisperProcessTranscriber(configuration: WhisperProcessConfiguration(executableURL: script, timeoutSeconds: 10))
+
+        let segments = try await transcriber.transcribe(chunk: fixture.chunk, model: fixture.model)
+        let args = try String(contentsOf: argsURL, encoding: .utf8).split(separator: "\n").map(String.init)
+
+        #expect(segments.map(\.text) == ["中文"])
+        #expect(args.contains("-l"))
+        #expect(args.contains("zh"))
+        #expect(!args.contains("-tr"))
+    }
+
     @Test func fakeBinarySuccessParsesJSONAndCapturesOutput() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

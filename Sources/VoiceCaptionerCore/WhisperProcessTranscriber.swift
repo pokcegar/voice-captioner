@@ -9,15 +9,21 @@ public struct WhisperProcessConfiguration: Equatable, Sendable {
     public var executableURL: URL
     public var timeoutSeconds: TimeInterval
     public var outputFormat: WhisperProcessOutputFormat
+    public var language: String
+    public var translateToEnglish: Bool
 
     public init(
         executableURL: URL,
         timeoutSeconds: TimeInterval = 120,
-        outputFormat: WhisperProcessOutputFormat = .whisperJSON
+        outputFormat: WhisperProcessOutputFormat = .whisperJSON,
+        language: String = "zh",
+        translateToEnglish: Bool = false
     ) {
         self.executableURL = executableURL
         self.timeoutSeconds = timeoutSeconds
         self.outputFormat = outputFormat
+        self.language = language
+        self.translateToEnglish = translateToEnglish
     }
 }
 
@@ -59,12 +65,17 @@ public final class WhisperProcessTranscriber: TranscriptionProvider, @unchecked 
 
         let process = Process()
         process.executableURL = configuration.executableURL
-        process.arguments = [
+        var arguments = [
             "-m", model.localPath.path,
             "-f", chunk.url.path,
+            "-l", configuration.language,
             "-oj",
             "-of", outputPrefix.path
         ]
+        if configuration.translateToEnglish {
+            arguments.append("-tr")
+        }
+        process.arguments = arguments
 
         let result = try await ProcessRunner.run(process, timeoutSeconds: configuration.timeoutSeconds)
         guard result.exitCode == 0 else {
