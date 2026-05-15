@@ -101,14 +101,53 @@ public protocol AudioCaptureProvider: Sendable {
 public struct AudioChunk: Equatable, Sendable {
     public var track: AudioTrackKind
     public var url: URL
-    public var start: TimeInterval
-    public var end: TimeInterval
+    /// Offset inside the chunk/source audio. Whisper output is relative to this domain.
+    public var sourceStart: TimeInterval
+    public var sourceEnd: TimeInterval
+    /// Offset on the meeting timeline. Transcript segments must be normalized to this domain.
+    public var timelineStart: TimeInterval
+    public var timelineEnd: TimeInterval
 
-    public init(track: AudioTrackKind, url: URL, start: TimeInterval, end: TimeInterval) {
+    public init(
+        track: AudioTrackKind,
+        url: URL,
+        sourceStart: TimeInterval,
+        sourceEnd: TimeInterval,
+        timelineStart: TimeInterval,
+        timelineEnd: TimeInterval
+    ) {
         self.track = track
         self.url = url
-        self.start = start
-        self.end = end
+        self.sourceStart = sourceStart
+        self.sourceEnd = sourceEnd
+        self.timelineStart = timelineStart
+        self.timelineEnd = timelineEnd
+    }
+
+    public init(track: AudioTrackKind, url: URL, start: TimeInterval, end: TimeInterval) {
+        self.init(track: track, url: url, sourceStart: start, sourceEnd: end, timelineStart: start, timelineEnd: end)
+    }
+
+    public init(id: String, track: AudioTrackKind, url: URL, start: TimeInterval, end: TimeInterval) {
+        self.init(track: track, url: url, start: start, end: end)
+    }
+
+    @available(*, deprecated, message: "Use sourceStart/timelineStart to avoid mixing time domains.")
+    public var start: TimeInterval {
+        get { timelineStart }
+        set {
+            sourceStart = newValue
+            timelineStart = newValue
+        }
+    }
+
+    @available(*, deprecated, message: "Use sourceEnd/timelineEnd to avoid mixing time domains.")
+    public var end: TimeInterval {
+        get { timelineEnd }
+        set {
+            sourceEnd = newValue
+            timelineEnd = newValue
+        }
     }
 }
 
