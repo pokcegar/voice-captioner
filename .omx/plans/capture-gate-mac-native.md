@@ -68,12 +68,12 @@ Baseline before concurrent source-scope edits:
 - Command: `swift build`
 - Result: PASS on 2026-05-15T01:33Z; debug build completed.
 
-Current final verification after concurrent source-scope edits:
+Current final verification after shared source-scope fixes:
 
 - Command: `swift test`
-- Result: FAIL on 2026-05-15T01:34Z during compile. Blocking errors are outside this docs/gate slice: `CaptureHandle` is used as a dictionary key without `Hashable`, `SystemAudioRecorder.stopWithMetadata()` has a circular `timingSnapshot` reference, and `CaptureSessionCoordinator` references missing `SystemAudioRecorder.firstSampleTime`.
+- Result: PASS on 2026-05-15T01:38Z; 19 tests in 7 suites passed.
 - Command: `swift build`
-- Result: FAIL on 2026-05-15T01:34Z with the same compile errors.
+- Result: PASS on 2026-05-15T01:38Z; debug build completed.
 
 ## Local-Only Constraints
 
