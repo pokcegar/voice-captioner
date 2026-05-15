@@ -107,6 +107,23 @@ exit 7
         }
     }
 
+
+    @Test func parserAcceptsWhisperCppFormattedTimestampStrings() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let json = root.appending(path: "whisper-output.json")
+        try Data("""
+        {"transcription":[{"timestamps":{"from":"00:01:02,500","to":"01:02:03,250"},"text":" formatted "}]}
+        """.utf8).write(to: json)
+
+        let segments = try WhisperJSONParser.parse(url: json, track: .microphone)
+
+        #expect(segments.count == 1)
+        #expect(segments[0].start == 62.5)
+        #expect(segments[0].end == 3723.25)
+        #expect(segments[0].text == "formatted")
+    }
+
     @Test func missingAndMalformedJSONAreTypedErrors() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

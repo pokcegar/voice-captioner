@@ -229,7 +229,7 @@ public enum WhisperJSONParser {
         do {
             let decoded = try JSONDecoder().decode(WhisperOutput.self, from: data)
             return decoded.transcription.compactMap { item in
-                guard let start = item.timestamps.from, let end = item.timestamps.to else { return nil }
+                guard let start = item.timestamps.from.seconds, let end = item.timestamps.to.seconds else { return nil }
                 return TranscriptSegment(
                     id: UUID().uuidString,
                     sourceTrack: track,
@@ -255,7 +255,46 @@ public enum WhisperJSONParser {
     }
 
     private struct Timestamps: Decodable {
-        var from: TimeInterval?
-        var to: TimeInterval?
+        var from: WhisperTimestamp
+        var to: WhisperTimestamp
+    }
+
+    private enum WhisperTimestamp: Decodable, Equatable {
+        case seconds(TimeInterval)
+        case formatted(String)
+        case missing
+
+        var seconds: TimeInterval? {
+            switch self {
+            case .seconds(let value):
+                return value
+            case .formatted(let value):
+                return Self.parseFormatted(value)
+            case .missing:
+                return nil
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() {
+                self = .missing
+            } else if let seconds = try? container.decode(TimeInterval.self) {
+                self = .seconds(seconds)
+            } else {
+                self = .formatted(try container.decode(String.self))
+            }
+        }
+
+        private static func parseFormatted(_ value: String) -> TimeInterval? {
+            let parts = value.split(separator: ":")
+            guard parts.count == 3,
+                  let hours = TimeInterval(parts[0]),
+                  let minutes = TimeInterval(parts[1])
+            else { return nil }
+            let secondText = parts[2].replacingOccurrences(of: ",", with: ".")
+            guard let seconds = TimeInterval(secondText) else { return nil }
+            return hours * 3_600 + minutes * 60 + seconds
+        }
     }
 }
