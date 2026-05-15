@@ -87,6 +87,37 @@ struct VoiceCaptionerAppModelTests {
     #expect(model.strings.text(.startRecording) == "Aufnahme starten")
   }
 
+
+  @Test @MainActor func startRecordingEnablesDelayedLiveDraftsWhenLocalWhisperIsReady() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let models = root.appending(path: "Models", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+    let modelURL = models.appending(path: "ggml-small.bin", directoryHint: .notDirectory)
+    let executable = root.appending(path: "whisper-cli", directoryHint: .notDirectory)
+    try Data("model".utf8).write(to: modelURL)
+    try Data("#!/bin/sh\n".utf8).write(to: executable)
+    let liveWorkflow = FakeLiveTranscriptionWorkflow()
+    let model = VoiceCaptionerAppModel(
+      outputRoot: root.appending(path: "Meetings", directoryHint: .isDirectory),
+      delaySeconds: 0.05,
+      chunkDurationSeconds: 5,
+      provider: FakeAudioCaptureProvider(),
+      modelsDirectory: models,
+      transcriptionWorkflow: FakeTranscriptionWorkflow(),
+      liveTranscriptionWorkflow: liveWorkflow,
+      defaultWhisperExecutable: WhisperExecutableCandidate(url: executable, source: "bundled")
+    )
+    model.refreshModels()
+
+    await model.startRecording()
+    try await Task.sleep(nanoseconds: 200_000_000)
+
+    #expect(model.rollingPreview.map { $0.text } == ["live draft"])
+    #expect(model.status.contains("延迟实时转写已更新"))
+    #expect((liveWorkflow.pipeline?.pollCount() ?? 0) >= 1)
+  }
+
   @Test @MainActor func initializesWithBundledWhisperExecutableCandidate() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -131,7 +162,8 @@ struct VoiceCaptionerAppModelTests {
       outputRoot: root,
       provider: FakeAudioCaptureProvider(),
       modelsDirectory: models,
-      transcriptionWorkflow: workflow
+      transcriptionWorkflow: workflow,
+      liveTranscriptionWorkflow: nil
     )
     model.refreshAll()
     model.setManualModel(modelURL)
@@ -184,6 +216,60 @@ private actor FakeTranscriptionWorkflow: TranscriptionWorkflow {
     return RollingTranscriptionResult(
       chunks: [], rollingSegments: [segment], finalSegments: [segment])
   }
+}
+
+private final class FakeLiveTranscriptionWorkflow: LiveTranscriptionWorkflow, @unchecked Sendable {
+  var pipeline: FakeLiveTranscriptionPipeline?
+
+  func makePipeline(whisperExecutableURL: URL) -> LiveTranscriptionPipeline {
+    let pipeline = FakeLiveTranscriptionPipeline()
+    self.pipeline = pipeline
+    return pipeline
+  }
+}
+
+private final class FakeLiveTranscriptionPipeline: LiveTranscriptionPipeline, @unchecked Sendable {
+  private let lock = NSLock()
+  private var polls = 0
+
+  init() {
+    super.init(transcriber: FakeNoopTranscriber())
+  }
+
+  func pollCount() -> Int {
+    lock.withLock { polls }
+  }
+
+  private func incrementPolls() {
+    lock.withLock { polls += 1 }
+  }
+
+  override func poll(
+    meeting: MeetingFolder,
+    model: WhisperModel,
+    chunkDuration: TimeInterval,
+    trailingSafetyMargin: TimeInterval = 1.0
+  ) async throws -> LiveTranscriptionUpdate {
+    incrementPolls()
+    return LiveTranscriptionUpdate(
+      chunks: [],
+      draftSegments: [
+        TranscriptSegment(
+          id: "live-1",
+          sourceTrack: .microphone,
+          speakerLabel: "Local",
+          start: 0,
+          end: 1,
+          text: "live draft",
+          isDraft: true
+        )
+      ]
+    )
+  }
+}
+
+private struct FakeNoopTranscriber: TranscriptionProvider {
+  func transcribe(chunk: AudioChunk, model: WhisperModel) async throws -> [TranscriptSegment] { [] }
 }
 
 private final class FakeAudioCaptureProvider: AudioCaptureProvider, @unchecked Sendable {

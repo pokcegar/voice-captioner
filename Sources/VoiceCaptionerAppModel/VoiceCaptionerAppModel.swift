@@ -89,7 +89,11 @@ public protocol TranscriptionWorkflow: Sendable {
   ) async throws -> RollingTranscriptionResult
 }
 
-public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow {
+public protocol LiveTranscriptionWorkflow: Sendable {
+  func makePipeline(whisperExecutableURL: URL) -> LiveTranscriptionPipeline
+}
+
+public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow, LiveTranscriptionWorkflow {
   public init() {}
 
   public func run(
@@ -98,11 +102,18 @@ public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow {
     whisperExecutableURL: URL,
     chunkDuration: TimeInterval
   ) async throws -> RollingTranscriptionResult {
-    let transcriber = WhisperProcessTranscriber(
+    let pipeline = RollingTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+    return try await pipeline.run(meeting: meeting, model: model, chunkDuration: chunkDuration)
+  }
+
+  public func makePipeline(whisperExecutableURL: URL) -> LiveTranscriptionPipeline {
+    LiveTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+  }
+
+  private func makeTranscriber(whisperExecutableURL: URL) -> WhisperProcessTranscriber {
+    WhisperProcessTranscriber(
       configuration: WhisperProcessConfiguration(executableURL: whisperExecutableURL)
     )
-    let pipeline = RollingTranscriptionPipeline(transcriber: transcriber)
-    return try await pipeline.run(meeting: meeting, model: model, chunkDuration: chunkDuration)
   }
 }
 
@@ -140,8 +151,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   private let provider: any AudioCaptureProvider
   private let modelRegistry: ModelRegistry
   private let transcriptionWorkflow: any TranscriptionWorkflow
+  private let liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)?
   private var activeHandle: CaptureHandle?
   private var transcriptionTask: Task<Void, Never>?
+  private var liveTranscriptionTask: Task<Void, Never>?
+  private var liveTranscriptionPipeline: LiveTranscriptionPipeline?
 
 
   public static func defaultModelsDirectory(bundle: Bundle = .main) -> URL {
@@ -164,6 +178,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     provider: any AudioCaptureProvider = NativeMacCaptureProvider(captureGatePassed: true),
     modelsDirectory: URL = VoiceCaptionerAppModel.defaultModelsDirectory(),
     transcriptionWorkflow: any TranscriptionWorkflow = LocalWhisperTranscriptionWorkflow(),
+    liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)? = LocalWhisperTranscriptionWorkflow(),
     defaultWhisperExecutable: WhisperExecutableCandidate? =
       WhisperExecutableLocator.firstAvailable()
   ) {
@@ -176,6 +191,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.provider = provider
     self.modelRegistry = ModelRegistry(modelsDirectory: modelsDirectory)
     self.transcriptionWorkflow = transcriptionWorkflow
+    self.liveTranscriptionWorkflow = liveTranscriptionWorkflow
     self.meetings = []
     self.selectedMeetingID = nil
     self.permissionStatus = nil
@@ -194,6 +210,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
 
   deinit {
     transcriptionTask?.cancel()
+    liveTranscriptionTask?.cancel()
   }
 
   public var strings: AppStrings { AppStrings(language: language) }
@@ -328,6 +345,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       isRecording = true
       selectedMeetingID = meeting.metadata.id
       status = statusText(.recording(meeting.metadata.title))
+      startLiveTranscriptionIfPossible(for: meeting)
       refreshHistoryPreservingSelection()
     } catch {
       status = statusText(.startFailed(error.localizedDescription))
@@ -337,6 +355,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   public func stopRecording() async {
     guard let handle = activeHandle else { return }
     do {
+      liveTranscriptionTask?.cancel()
+      liveTranscriptionTask = nil
       status = statusText(.finalizingCapture)
       let result = try await provider.stop(handle)
       captureResult = result
@@ -346,7 +366,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
         meeting.metadata = try store.readMetadata(at: meeting.metadataURL)
         activeMeeting = meeting
         selectedMeetingID = meeting.metadata.id
-        rollingPreview = previewSegments(from: result)
+        if rollingPreview.isEmpty {
+          rollingPreview = previewSegments(from: result)
+        }
       }
       status =
         result.status == .complete
@@ -355,6 +377,43 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       refreshHistoryPreservingSelection()
     } catch {
       status = statusText(.stopFailed(error.localizedDescription))
+    }
+  }
+
+  private func startLiveTranscriptionIfPossible(for meeting: MeetingFolder) {
+    guard liveTranscriptionTask == nil else { return }
+    guard let model = selectedWhisperModel, let whisperExecutableURL, let liveTranscriptionWorkflow else {
+      status = statusText(.recordingWithoutLiveTranscription(meeting.metadata.title))
+      return
+    }
+    let pipeline = liveTranscriptionWorkflow.makePipeline(whisperExecutableURL: whisperExecutableURL)
+    liveTranscriptionPipeline = pipeline
+    let chunkDuration = max(5, chunkDurationSeconds)
+    let pollInterval = max(0.1, min(2, min(delaySeconds, chunkDuration) / 2))
+    liveTranscriptionTask = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+        await self.pollLiveTranscription(meeting: meeting, model: model, pipeline: pipeline, chunkDuration: chunkDuration)
+      }
+    }
+  }
+
+  private func pollLiveTranscription(
+    meeting: MeetingFolder,
+    model: WhisperModel,
+    pipeline: LiveTranscriptionPipeline,
+    chunkDuration: TimeInterval
+  ) async {
+    do {
+      let update = try await pipeline.poll(meeting: meeting, model: model, chunkDuration: chunkDuration)
+      if !update.draftSegments.isEmpty {
+        rollingPreview = update.draftSegments
+        status = statusText(.liveTranscriptionUpdated(segmentCount: update.draftSegments.count))
+      }
+    } catch {
+      status = statusText(.liveTranscriptionFailed(error.localizedDescription))
     }
   }
 
@@ -473,6 +532,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case regeneratedChunks(count: Int)
     case chunkPlanFailed(String)
     case capturedTrackPreview(String)
+    case recordingWithoutLiveTranscription(String)
+    case liveTranscriptionUpdated(segmentCount: Int)
+    case liveTranscriptionFailed(String)
   }
 
   private func statusText(_ message: AppStatusMessage) -> String {
@@ -535,6 +597,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.zhHans, .regeneratedChunks(let count)): return "已重新生成 \(count) 个本地分块任务。"
     case (.zhHans, .chunkPlanFailed(let error)): return "分块计划失败：\(error)"
     case (.zhHans, .capturedTrackPreview(let track)): return "已捕获\(track)音轨；运行本地转写后会替换此草稿。"
+    case (.zhHans, .recordingWithoutLiveTranscription(let title)):
+      return "正在本地录制“\(title)”；选择本地模型和 whisper.cpp 后可启用延迟实时转写。"
+    case (.zhHans, .liveTranscriptionUpdated(let count)): return "延迟实时转写已更新：\(count) 个草稿片段。"
+    case (.zhHans, .liveTranscriptionFailed(let error)): return "延迟实时转写失败：\(error)"
 
     case (.en, .ready): return "Ready — local-only recording and transcription"
     case (.en, .noDownloadedModels(let needsExecutable)):
@@ -581,6 +647,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.en, .chunkPlanFailed(let error)): return "Chunk plan failed: \(error)"
     case (.en, .capturedTrackPreview(let track)):
       return "Captured \(track) track; run local transcription to replace this draft."
+    case (.en, .recordingWithoutLiveTranscription(let title)):
+      return "Recording \(title) locally; choose a local model and whisper.cpp executable to enable delayed live transcription."
+    case (.en, .liveTranscriptionUpdated(let count)):
+      return "Delayed live transcription updated: \(count) draft segment(s)."
+    case (.en, .liveTranscriptionFailed(let error)): return "Delayed live transcription failed: \(error)"
 
     case (.de, .ready): return "Bereit — lokale Aufnahme und Transkription"
     case (.de, .noDownloadedModels(let needsExecutable)):
@@ -633,6 +704,12 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.de, .chunkPlanFailed(let error)): return "Chunk-Plan fehlgeschlagen: \(error)"
     case (.de, .capturedTrackPreview(let track)):
       return "\(track)-Spur erfasst; lokale Transkription ersetzt diesen Entwurf."
+    case (.de, .recordingWithoutLiveTranscription(let title)):
+      return "\(title) wird lokal aufgenommen; lokales Modell und whisper.cpp-Programm für verzögerte Live-Transkription auswählen."
+    case (.de, .liveTranscriptionUpdated(let count)):
+      return "Verzögerte Live-Transkription aktualisiert: \(count) Entwurfssegment(e)."
+    case (.de, .liveTranscriptionFailed(let error)):
+      return "Verzögerte Live-Transkription fehlgeschlagen: \(error)"
     }
   }
 
