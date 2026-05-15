@@ -47,6 +47,43 @@ struct ModelRegistryTests {
         #expect(try registry.downloadedModels().isEmpty)
     }
 
+
+
+    @Test func acceptsDownloadedUnverifiedScriptManifests() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appending(path: "ggml-base.bin"))
+        try manifest(filename: "ggml-base.bin", status: "downloaded_unverified", sha256: nil)
+            .write(to: root.appending(path: "ggml-base.bin.manifest.json"), atomically: true, encoding: .utf8)
+
+        let registry = ModelRegistry(modelsDirectory: root)
+
+        #expect(try registry.downloadedModels().map(\.name) == ["ggml-base"])
+    }
+
+    @Test func buildsStableDownloadURLs() {
+        #expect(WhisperModelSize.largeV3Turbo.filename == "ggml-large-v3-turbo.bin")
+        #expect(WhisperModelDownloadMirror.official.downloadURL(for: .small).absoluteString == "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin")
+        #expect(WhisperModelDownloadMirror.hfMirror.downloadURL(for: .tiny).absoluteString == "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin")
+    }
+
+
+
+    @Test func scansWritableAndBundledModelDirectories() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let writable = root.appending(path: "Writable", directoryHint: .isDirectory)
+        let bundled = root.appending(path: "Bundled", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: writable, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bundled, withIntermediateDirectories: true)
+        try Data().write(to: writable.appending(path: "ggml-base.bin"))
+        try Data().write(to: bundled.appending(path: "ggml-tiny.bin"))
+
+        let registry = ModelRegistry(modelsDirectory: writable, additionalModelsDirectories: [bundled])
+
+        #expect(try registry.downloadedModels().map(\.name) == ["ggml-base", "ggml-tiny"])
+    }
+
     @Test func validatesManualModelExtensions() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

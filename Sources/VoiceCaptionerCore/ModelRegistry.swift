@@ -65,10 +65,16 @@ public enum WhisperModelRecommendation: Int, Codable, Equatable, Sendable, Compa
 
 public struct ModelRegistry {
     public var modelsDirectory: URL
+    public var additionalModelsDirectories: [URL]
     public var fileManager: FileManager
 
-    public init(modelsDirectory: URL, fileManager: FileManager = .default) {
+    public init(
+        modelsDirectory: URL,
+        additionalModelsDirectories: [URL] = [],
+        fileManager: FileManager = .default
+    ) {
         self.modelsDirectory = modelsDirectory
+        self.additionalModelsDirectories = additionalModelsDirectories
         self.fileManager = fileManager
     }
 
@@ -77,30 +83,38 @@ public struct ModelRegistry {
     }
 
     public func downloadedModelEntries() throws -> [DownloadedWhisperModel] {
-        guard fileManager.fileExists(atPath: modelsDirectory.path) else { return [] }
-        let urls = try fileManager.contentsOfDirectory(
-            at: modelsDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-        let manifests = try manifestsByFilename(in: urls)
+        let entries = try allModelDirectories().flatMap { directory -> [DownloadedWhisperModel] in
+            guard fileManager.fileExists(atPath: directory.path) else { return [] }
+            let urls = try fileManager.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            let manifests = try manifestsByFilename(in: urls)
 
-        return urls
-            .filter(isSupportedModelFile)
-            .compactMap { url -> DownloadedWhisperModel? in
-                let manifest = manifests[url.lastPathComponent]
-                if let manifest, manifest.status != nil, manifest.status != "downloaded" {
-                    return nil
+            return urls
+                .filter(isSupportedModelFile)
+                .compactMap { url -> DownloadedWhisperModel? in
+                    let manifest = manifests[url.lastPathComponent]
+                    if let manifest, !Self.isUsableManifestStatus(manifest.status) {
+                        return nil
+                    }
+                    guard fileManager.fileExists(atPath: url.path) else { return nil }
+                    let name = url.deletingPathExtension().lastPathComponent
+                    let model = WhisperModel(name: name, localPath: url, checksum: manifest?.sha256)
+                    return DownloadedWhisperModel(
+                        model: model,
+                        manifest: manifest,
+                        recommendation: recommendation(for: name)
+                    )
                 }
-                guard fileManager.fileExists(atPath: url.path) else { return nil }
-                let name = url.deletingPathExtension().lastPathComponent
-                let model = WhisperModel(name: name, localPath: url, checksum: manifest?.sha256)
-                return DownloadedWhisperModel(
-                    model: model,
-                    manifest: manifest,
-                    recommendation: recommendation(for: name)
-                )
+        }
+
+        return entries
+            .reduce(into: [String: DownloadedWhisperModel]()) { partial, entry in
+                partial[entry.model.localPath.path] = entry
             }
+            .values
             .sorted { lhs, rhs in
                 if lhs.recommendation != rhs.recommendation {
                     return lhs.recommendation < rhs.recommendation
@@ -115,6 +129,18 @@ public struct ModelRegistry {
 
     public func validateManualModel(at url: URL) -> Bool {
         fileManager.fileExists(atPath: url.path) && isSupportedModelFile(url)
+    }
+
+    private func allModelDirectories() -> [URL] {
+        ([modelsDirectory] + additionalModelsDirectories).reduce(into: [URL]()) { partial, url in
+            guard !partial.contains(where: { $0.path == url.path }) else { return }
+            partial.append(url)
+        }
+    }
+
+    private static func isUsableManifestStatus(_ status: String?) -> Bool {
+        guard let status else { return true }
+        return ["downloaded", "downloaded_unverified"].contains(status)
     }
 
     private func manifestsByFilename(in urls: [URL]) throws -> [String: WhisperModelManifest] {

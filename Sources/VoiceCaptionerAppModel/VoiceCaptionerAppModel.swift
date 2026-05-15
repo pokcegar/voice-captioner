@@ -21,6 +21,39 @@ public enum TranscriptionWorkflowState: Equatable, Sendable {
   }
 }
 
+public enum ModelDownloadState: Equatable, Sendable {
+  case idle
+  case running(message: String)
+  case completed(message: String)
+  case cancelled
+  case failed(message: String)
+
+  public var isRunning: Bool {
+    if case .running = self { return true }
+    return false
+  }
+}
+
+public protocol ModelDownloadWorkflow: Sendable {
+  func download(model: WhisperModelSize, mirror: WhisperModelDownloadMirror) async throws
+    -> WhisperModelManifest
+}
+
+public struct LocalModelDownloadWorkflow: ModelDownloadWorkflow {
+  private let downloader: WhisperModelDownloader
+
+  public init(modelsDirectory: URL) {
+    self.downloader = WhisperModelDownloader(modelsDirectory: modelsDirectory)
+  }
+
+  public func download(
+    model: WhisperModelSize,
+    mirror: WhisperModelDownloadMirror
+  ) async throws -> WhisperModelManifest {
+    try await downloader.download(model: model, mirror: mirror)
+  }
+}
+
 public struct TranscriptExportArtifact: Equatable, Sendable, Identifiable {
   public var id: String { url.path }
   public var label: String
@@ -108,12 +141,14 @@ public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow, LiveTran
     whisperExecutableURL: URL,
     chunkDuration: TimeInterval
   ) async throws -> RollingTranscriptionResult {
-    let pipeline = RollingTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+    let pipeline = RollingTranscriptionPipeline(
+      transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
     return try await pipeline.run(meeting: meeting, model: model, chunkDuration: chunkDuration)
   }
 
   public func makePipeline(whisperExecutableURL: URL) -> LiveTranscriptionPipeline {
-    LiveTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+    LiveTranscriptionPipeline(
+      transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
   }
 
   private func makeTranscriber(whisperExecutableURL: URL) -> WhisperProcessTranscriber {
@@ -148,6 +183,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   @Published public private(set) var rollingPreview: [TranscriptSegment]
   @Published public private(set) var downloadedModels: [DownloadedWhisperModel]
   @Published public var selectedDownloadedModelPath: String?
+  @Published public var selectedModelDownload: WhisperModelSize
+  @Published public var selectedModelDownloadMirror: WhisperModelDownloadMirror
+  @Published public private(set) var modelDownloadState: ModelDownloadState
   @Published public private(set) var manualModelURL: URL?
   @Published public private(set) var whisperExecutableURL: URL?
   @Published public private(set) var whisperExecutableSource: String?
@@ -163,16 +201,30 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   private let modelRegistry: ModelRegistry
   private let transcriptionWorkflow: any TranscriptionWorkflow
   private let liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)?
+  private let modelDownloadWorkflow: any ModelDownloadWorkflow
   private var activeHandle: CaptureHandle?
   private var transcriptionTask: Task<Void, Never>?
   private var liveTranscriptionTask: Task<Void, Never>?
   private var liveTranscriptionPipeline: LiveTranscriptionPipeline?
+  private var modelDownloadTask: Task<Void, Never>?
 
+  public static func bundledModelsDirectory(bundle: Bundle = .main) -> URL? {
+    let bundledModels = bundle.resourceURL?.appending(path: "Models", directoryHint: .isDirectory)
+    guard let bundledModels, FileManager.default.fileExists(atPath: bundledModels.path) else {
+      return nil
+    }
+    return bundledModels
+  }
 
   public static func defaultModelsDirectory(bundle: Bundle = .main) -> URL {
-    let bundledModels = bundle.resourceURL?.appending(path: "Models", directoryHint: .isDirectory)
-    if let bundledModels, FileManager.default.fileExists(atPath: bundledModels.path) {
-      return bundledModels
+    if bundle.resourceURL?.path.contains(".app/Contents/Resources") == true,
+      let applicationSupport = FileManager.default.urls(
+        for: .applicationSupportDirectory, in: .userDomainMask
+      ).first
+    {
+      return applicationSupport
+        .appending(path: "VoiceCaptioner", directoryHint: .isDirectory)
+        .appending(path: "Models", directoryHint: .isDirectory)
     }
     return URL(filePath: FileManager.default.currentDirectoryPath)
       .appending(path: "Models", directoryHint: .isDirectory)
@@ -188,8 +240,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     store: MeetingStore = MeetingStore(),
     provider: any AudioCaptureProvider = NativeMacCaptureProvider(captureGatePassed: true),
     modelsDirectory: URL = VoiceCaptionerAppModel.defaultModelsDirectory(),
+    bundledModelsDirectory: URL? = VoiceCaptionerAppModel.bundledModelsDirectory(),
     transcriptionWorkflow: any TranscriptionWorkflow = LocalWhisperTranscriptionWorkflow(),
-    liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)? = LocalWhisperTranscriptionWorkflow(),
+    liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)? =
+      LocalWhisperTranscriptionWorkflow(),
+    modelDownloadWorkflow: (any ModelDownloadWorkflow)? = nil,
     defaultWhisperExecutable: WhisperExecutableCandidate? =
       WhisperExecutableLocator.firstAvailable()
   ) {
@@ -200,9 +255,15 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.chunkDurationSeconds = chunkDurationSeconds
     self.store = store
     self.provider = provider
-    self.modelRegistry = ModelRegistry(modelsDirectory: modelsDirectory)
+    let additionalModelDirectories = [bundledModelsDirectory].compactMap { $0 }
+    self.modelRegistry = ModelRegistry(
+      modelsDirectory: modelsDirectory,
+      additionalModelsDirectories: additionalModelDirectories
+    )
     self.transcriptionWorkflow = transcriptionWorkflow
     self.liveTranscriptionWorkflow = liveTranscriptionWorkflow
+    self.modelDownloadWorkflow =
+      modelDownloadWorkflow ?? LocalModelDownloadWorkflow(modelsDirectory: modelsDirectory)
     self.meetings = []
     self.selectedMeetingID = nil
     self.permissionStatus = nil
@@ -213,6 +274,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.rollingPreview = []
     self.downloadedModels = []
     self.selectedDownloadedModelPath = nil
+    self.selectedModelDownload = .small
+    self.selectedModelDownloadMirror = .official
+    self.modelDownloadState = .idle
     self.manualModelURL = nil
     self.whisperExecutableURL = defaultWhisperExecutable?.url
     self.whisperExecutableSource = defaultWhisperExecutable?.source
@@ -227,6 +291,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   deinit {
     transcriptionTask?.cancel()
     liveTranscriptionTask?.cancel()
+    modelDownloadTask?.cancel()
   }
 
   public static let finalMarkdownFilename = "final.md"
@@ -264,6 +329,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       && selectedWhisperModel != nil
       && whisperExecutableURL != nil
       && !transcriptionState.isRunning
+  }
+
+  public var canDownloadSelectedModel: Bool {
+    !isRecording && !modelDownloadState.isRunning
   }
 
   public var canSaveEditableMarkdown: Bool {
@@ -356,6 +425,58 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     if path != nil { manualModelURL = nil }
   }
 
+  public func beginModelDownload() {
+    guard canDownloadSelectedModel else { return }
+    modelDownloadTask = Task { [weak self] in
+      guard let self else { return }
+      await self.downloadSelectedModel()
+    }
+  }
+
+  public func downloadSelectedModel() async {
+    guard canDownloadSelectedModel else { return }
+    let model = selectedModelDownload
+    let mirror = selectedModelDownloadMirror
+    let runningMessage = statusText(.modelDownloadStarted(model.displayName, mirror.rawValue))
+    modelDownloadState = .running(message: runningMessage)
+    status = runningMessage
+    do {
+      let manifest = try await modelDownloadWorkflow.download(model: model, mirror: mirror)
+      if Task.isCancelled {
+        modelDownloadState = .cancelled
+        status = statusText(.modelDownloadCancelled)
+        modelDownloadTask = nil
+        return
+      }
+      refreshModels()
+      let downloadedPath = downloadedModels.first(where: {
+        $0.model.localPath.lastPathComponent == manifest.filename
+      })?.model.localPath.path
+      if let downloadedPath {
+        selectedDownloadedModelPath = downloadedPath
+        manualModelURL = nil
+      }
+      let completedMessage = statusText(.modelDownloadComplete(model.displayName))
+      modelDownloadState = .completed(message: completedMessage)
+      status = completedMessage
+    } catch is CancellationError {
+      modelDownloadState = .cancelled
+      status = statusText(.modelDownloadCancelled)
+    } catch {
+      let failedMessage = statusText(.modelDownloadFailed(error.localizedDescription))
+      modelDownloadState = .failed(message: failedMessage)
+      status = failedMessage
+    }
+    modelDownloadTask = nil
+  }
+
+  public func cancelModelDownload() {
+    modelDownloadTask?.cancel()
+    modelDownloadTask = nil
+    modelDownloadState = .cancelled
+    status = statusText(.modelDownloadCancelled)
+  }
+
   public func startRecording() async {
     guard !isRecording else { return }
     do {
@@ -408,11 +529,13 @@ public final class VoiceCaptionerAppModel: ObservableObject {
 
   private func startLiveTranscriptionIfPossible(for meeting: MeetingFolder) {
     guard liveTranscriptionTask == nil else { return }
-    guard let model = selectedWhisperModel, let whisperExecutableURL, let liveTranscriptionWorkflow else {
+    guard let model = selectedWhisperModel, let whisperExecutableURL, let liveTranscriptionWorkflow
+    else {
       status = statusText(.recordingWithoutLiveTranscription(meeting.metadata.title))
       return
     }
-    let pipeline = liveTranscriptionWorkflow.makePipeline(whisperExecutableURL: whisperExecutableURL)
+    let pipeline = liveTranscriptionWorkflow.makePipeline(
+      whisperExecutableURL: whisperExecutableURL)
     liveTranscriptionPipeline = pipeline
     let chunkDuration = max(5, chunkDurationSeconds)
     let pollInterval = max(0.1, min(2, min(delaySeconds, chunkDuration) / 2))
@@ -421,7 +544,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
         guard !Task.isCancelled else { return }
-        await self.pollLiveTranscription(meeting: meeting, model: model, pipeline: pipeline, chunkDuration: chunkDuration)
+        await self.pollLiveTranscription(
+          meeting: meeting, model: model, pipeline: pipeline, chunkDuration: chunkDuration)
       }
     }
   }
@@ -433,7 +557,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     chunkDuration: TimeInterval
   ) async {
     do {
-      let update = try await pipeline.poll(meeting: meeting, model: model, chunkDuration: chunkDuration)
+      let update = try await pipeline.poll(
+        meeting: meeting, model: model, chunkDuration: chunkDuration)
       if !update.draftSegments.isEmpty {
         rollingPreview = update.draftSegments
         status = statusText(.liveTranscriptionUpdated(segmentCount: update.draftSegments.count))
@@ -515,7 +640,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     }
   }
 
-
   public func selectMeeting(id: String?) {
     if selectedMeetingID == id, editableMarkdownMeetingID == id { return }
     autosaveEditableMarkdownIfDirty()
@@ -524,11 +648,13 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   }
 
   public func finalMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(path: Self.finalMarkdownFilename, directoryHint: .notDirectory)
+    meeting.transcriptDirectory.appending(
+      path: Self.finalMarkdownFilename, directoryHint: .notDirectory)
   }
 
   public func editedMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(path: Self.editedMarkdownFilename, directoryHint: .notDirectory)
+    meeting.transcriptDirectory.appending(
+      path: Self.editedMarkdownFilename, directoryHint: .notDirectory)
   }
 
   public func loadEditableMarkdown(for meeting: MeetingFolder?) {
@@ -573,7 +699,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   }
 
   public func saveEditableMarkdown() {
-    guard let meetingID = editableMarkdownMeetingID, let meeting = meeting(for: meetingID) else { return }
+    guard let meetingID = editableMarkdownMeetingID, let meeting = meeting(for: meetingID) else {
+      return
+    }
     do {
       try FileManager.default.createDirectory(
         at: meeting.transcriptDirectory, withIntermediateDirectories: true)
@@ -627,6 +755,10 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case noBundledExecutable
     case invalidManualModel
     case usingManualModel(String)
+    case modelDownloadStarted(String, String)
+    case modelDownloadComplete(String)
+    case modelDownloadCancelled
+    case modelDownloadFailed(String)
     case recording(String)
     case startFailed(String)
     case finalizingCapture
@@ -695,6 +827,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.zhHans, .noBundledExecutable): return "未找到内置 whisper.cpp 可执行文件；请手动选择。"
     case (.zhHans, .invalidManualModel): return "手动模型必须是存在的 .bin 或 .gguf 文件。"
     case (.zhHans, .usingManualModel(let name)): return "正在使用手动选择的本地模型：\(name)"
+    case (.zhHans, .modelDownloadStarted(let name, let mirror)):
+      return "正在从 \(mirror) 下载 Whisper \(name) 模型…"
+    case (.zhHans, .modelDownloadComplete(let name)): return "Whisper \(name) 模型已下载并选中。"
+    case (.zhHans, .modelDownloadCancelled): return "模型下载已取消。"
+    case (.zhHans, .modelDownloadFailed(let error)): return "模型下载失败：\(error)"
     case (.zhHans, .recording(let title)): return "正在本地录制“\(title)”…"
     case (.zhHans, .startFailed(let error)): return "启动失败：\(error)"
     case (.zhHans, .finalizingCapture): return "正在完成本地录音…"
@@ -739,6 +876,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       return "No bundled whisper.cpp executable found; choose one manually."
     case (.en, .invalidManualModel): return "Manual model must be an existing .bin or .gguf file."
     case (.en, .usingManualModel(let name)): return "Using manual local model: \(name)"
+    case (.en, .modelDownloadStarted(let name, let mirror)):
+      return "Downloading Whisper \(name) from \(mirror)…"
+    case (.en, .modelDownloadComplete(let name)): return "Whisper \(name) downloaded and selected."
+    case (.en, .modelDownloadCancelled): return "Model download cancelled."
+    case (.en, .modelDownloadFailed(let error)): return "Model download failed: \(error)"
     case (.en, .recording(let title)): return "Recording \(title) locally…"
     case (.en, .startFailed(let error)): return "Start failed: \(error)"
     case (.en, .finalizingCapture): return "Finalizing local capture…"
@@ -767,13 +909,17 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.en, .capturedTrackPreview(let track)):
       return "Captured \(track) track; run local transcription to replace this draft."
     case (.en, .recordingWithoutLiveTranscription(let title)):
-      return "Recording \(title) locally; choose a local model and whisper.cpp executable to enable delayed live transcription."
+      return
+        "Recording \(title) locally; choose a local model and whisper.cpp executable to enable delayed live transcription."
     case (.en, .liveTranscriptionUpdated(let count)):
       return "Delayed live transcription updated: \(count) draft segment(s)."
-    case (.en, .liveTranscriptionFailed(let error)): return "Delayed live transcription failed: \(error)"
+    case (.en, .liveTranscriptionFailed(let error)):
+      return "Delayed live transcription failed: \(error)"
     case (.en, .editableMarkdownSaved): return "Edited Markdown autosaved."
-    case (.en, .editableMarkdownLoadFailed(let error)): return "Failed to load editable Markdown: \(error)"
-    case (.en, .editableMarkdownSaveFailed(let error)): return "Failed to save edited Markdown: \(error)"
+    case (.en, .editableMarkdownLoadFailed(let error)):
+      return "Failed to load editable Markdown: \(error)"
+    case (.en, .editableMarkdownSaveFailed(let error)):
+      return "Failed to save edited Markdown: \(error)"
 
     case (.de, .ready): return "Bereit — lokale Aufnahme und Transkription"
     case (.de, .noDownloadedModels(let needsExecutable)):
@@ -797,6 +943,12 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       return "Das manuelle Modell muss eine vorhandene .bin- oder .gguf-Datei sein."
     case (.de, .usingManualModel(let name)):
       return "Manuelles lokales Modell wird verwendet: \(name)"
+    case (.de, .modelDownloadStarted(let name, let mirror)):
+      return "Whisper-Modell \(name) wird von \(mirror) heruntergeladen…"
+    case (.de, .modelDownloadComplete(let name)):
+      return "Whisper-Modell \(name) wurde heruntergeladen und ausgewählt."
+    case (.de, .modelDownloadCancelled): return "Modelldownload abgebrochen."
+    case (.de, .modelDownloadFailed(let error)): return "Modelldownload fehlgeschlagen: \(error)"
     case (.de, .recording(let title)): return "\(title) wird lokal aufgenommen…"
     case (.de, .startFailed(let error)): return "Start fehlgeschlagen: \(error)"
     case (.de, .finalizingCapture): return "Lokale Aufnahme wird abgeschlossen…"
@@ -827,7 +979,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.de, .capturedTrackPreview(let track)):
       return "\(track)-Spur erfasst; lokale Transkription ersetzt diesen Entwurf."
     case (.de, .recordingWithoutLiveTranscription(let title)):
-      return "\(title) wird lokal aufgenommen; lokales Modell und whisper.cpp-Programm für verzögerte Live-Transkription auswählen."
+      return
+        "\(title) wird lokal aufgenommen; lokales Modell und whisper.cpp-Programm für verzögerte Live-Transkription auswählen."
     case (.de, .liveTranscriptionUpdated(let count)):
       return "Verzögerte Live-Transkription aktualisiert: \(count) Entwurfssegment(e)."
     case (.de, .liveTranscriptionFailed(let error)):

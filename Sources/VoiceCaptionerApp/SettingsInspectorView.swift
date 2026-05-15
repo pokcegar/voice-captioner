@@ -61,9 +61,43 @@ struct SettingsInspectorView: View {
             }
           }
         }
+
+        LabeledContent(strings.text(.modelToDownload)) {
+          VStack(alignment: .trailing, spacing: 6) {
+            Picker(strings.text(.modelToDownload), selection: $viewModel.selectedModelDownload) {
+              ForEach(WhisperModelSize.allCases) { model in
+                Text(model.displayName).tag(model)
+              }
+            }
+            .labelsHidden()
+            Picker(strings.text(.modelMirror), selection: $viewModel.selectedModelDownloadMirror) {
+              ForEach(WhisperModelDownloadMirror.allCases) { mirror in
+                Text(mirrorLabel(mirror)).tag(mirror)
+              }
+            }
+            .labelsHidden()
+            HStack {
+              if viewModel.modelDownloadState.isRunning {
+                ProgressView()
+                  .controlSize(.small)
+                Button(strings.text(.cancel), action: viewModel.cancelModelDownload)
+              }
+              Button(strings.text(.downloadModel), action: viewModel.beginModelDownload)
+                .disabled(!viewModel.canDownloadSelectedModel)
+            }
+            if let message = modelDownloadMessage {
+              Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+            }
+          }
+        }
         LabeledContent(strings.text(.downloadedModel)) {
           VStack(alignment: .trailing, spacing: 4) {
-            Picker(strings.text(.downloadedModel), selection: $viewModel.selectedDownloadedModelPath) {
+            Picker(
+              strings.text(.downloadedModel), selection: $viewModel.selectedDownloadedModelPath
+            ) {
               Text(strings.text(.manualNone)).tag(Optional<String>.none)
               ForEach(viewModel.downloadedModels, id: \.model.localPath.path) { entry in
                 Text(modelLabel(entry)).tag(Optional(entry.model.localPath.path))
@@ -141,7 +175,8 @@ struct SettingsInspectorView: View {
         capabilityRow(strings.text(.microphone), viewModel.permissionStatus?.microphone)
         capabilityRow(strings.text(.systemAudio), viewModel.permissionStatus?.systemAudio)
         capabilityRow(strings.text(.outputFolder), viewModel.permissionStatus?.outputFolder)
-        capabilityRow(strings.text(.sandboxEntitlements), viewModel.permissionStatus?.sandboxEntitlement)
+        capabilityRow(
+          strings.text(.sandboxEntitlements), viewModel.permissionStatus?.sandboxEntitlement)
         capabilityRow(strings.text(.model), viewModel.permissionStatus?.model)
       }
       .padding(.top, 8)
@@ -169,6 +204,26 @@ struct SettingsInspectorView: View {
     }
     let source = localizedExecutableSource(viewModel.whisperExecutableSource)
     return "\(source): \(url.path)"
+  }
+
+  private var modelDownloadMessage: String? {
+    switch viewModel.modelDownloadState {
+    case .idle:
+      return nil
+    case .running(let message), .completed(let message), .failed(let message):
+      return message
+    case .cancelled:
+      return strings.text(.cancel)
+    }
+  }
+
+  private func mirrorLabel(_ mirror: WhisperModelDownloadMirror) -> String {
+    switch mirror {
+    case .official:
+      return strings.text(.officialMirror)
+    case .hfMirror:
+      return strings.text(.hfMirror)
+    }
   }
 
   private func localizedExecutableSource(_ source: String?) -> String {

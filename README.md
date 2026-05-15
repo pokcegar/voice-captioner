@@ -38,7 +38,7 @@ The current gate status is passed for the unified ScreenCaptureKit path: the spl
 The supported v1 product path is local-only and post-stop transcription oriented:
 
 1. Choose a meeting output root on disk.
-2. Choose a local `whisper.cpp` executable and a local model file from `Models/` or a user-selected path.
+2. Choose a local `whisper.cpp` executable, then download a Whisper model inside Settings (official Hugging Face or HF-Mirror) or select an existing local `.bin`/`.gguf` model.
 3. Record with the unified ScreenCaptureKit capture path so system audio and microphone audio are written as separated source tracks.
 4. Stop recording before transcription starts.
 5. Generate chunk manifests from the recorded sources, run local Whisper transcription over derived chunks, and keep rolling draft artifacts under the meeting folder.
@@ -78,7 +78,7 @@ scripts/package-local-app.sh
 open dist/VoiceCaptioner.app
 ```
 
-The app prefers the bundled `Contents/Resources/whisper-cli` automatically. The settings UI still keeps **Choose…** as a manual fallback if you want to override the executable. Downloaded model binaries remain local in `Models/` and are selected by the app/model picker; they are intentionally ignored by Git.
+The app prefers the bundled `Contents/Resources/whisper-cli` automatically. The settings UI still keeps **Choose…** as a manual fallback if you want to override the executable. Settings can download `tiny`, `base`, `small`, `medium`, `large-v3`, or `large-v3-turbo` from Hugging Face official or HF-Mirror, writes the file and manifest to a writable local Models directory, rescans bundled plus downloaded models, and selects the new local model. Downloaded model binaries remain local and are intentionally ignored by Git.
 
 SwiftPM writes to the project-local `.build` directory.
 
@@ -101,7 +101,7 @@ Before a release claim, record PASS/FAIL evidence for:
 - `swift run unified-capture-smoke 30` with microphone and Screen & System Audio Recording permission granted.
 - Fake local Whisper smoke via `swift test --filter WhisperProcessTranscriberTests`.
 - Chunk/pipeline/export regressions via `swift test --filter RollingTranscriptionPipelineTests` and `swift test --filter TranscriptTests`.
-- Manual real-model smoke using a local `whisper.cpp` executable and local model file; do not download models implicitly during the smoke.
+- Manual real-model smoke using a local `whisper.cpp` executable and local model file; model download is explicit from Settings or `scripts/download-whisper-model.sh`, never implicit during smoke.
 - Manual packaged-app smoke from a signed build: select output folder, grant permissions, record, stop, transcribe locally, export Markdown/SRT/JSON, reopen history, and verify generated artifacts remain inside the selected local folders.
 
 Do not claim a signed packaged release until the signed-app smoke has been performed on the packaged app, not only SwiftPM targets.

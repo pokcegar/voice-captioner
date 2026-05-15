@@ -38,12 +38,20 @@ public struct AppStrings: Sendable {
     case machineMarkdown, editedMarkdown, markdownEditor, saveEditedMarkdown
     case markdownSourceFinal, markdownSourceEdited, markdownWaitingForTranscript, unsavedChanges
     case capture, outputRoot, choose, meetingTitle, meetingPlaceholder
-    case rollingDelay, chunkSize, seconds(Int), localWhisper, whisperExecutable, useBundled
-    case downloadedModel, manualNone, rescan, manualModel, startRecording, stop, refreshPermissions
+    case rollingDelay, chunkSize
+    case seconds(Int)
+    case localWhisper, whisperExecutable, useBundled
+    case downloadedModel, modelToDownload, modelMirror, officialMirror, hfMirror, downloadModel
+    case manualNone, rescan, manualModel, startRecording, stop, refreshPermissions
     case transcribeSelectedMeeting, cancel, regenerateChunkManifest, idleTranscriptionHelp
-    case completedSegments(Int), transcriptionCancelled, transcriptionFailed(String), capabilities
+    case completedSegments(Int)
+    case transcriptionCancelled
+    case transcriptionFailed(String)
+    case capabilities
     case microphone, systemAudio, outputFolder, sandboxEntitlements, model, transcriptPreview
-    case transcriptPreviewEmpty, selectedMeeting, openFolder, openArtifact(String), noMeetingSelected
+    case transcriptPreviewEmpty, selectedMeeting, openFolder
+    case openArtifact(String)
+    case noMeetingSelected
     case noBundledExecutable, sourceBundled, sourceProject, sourceManual, optionalModelPath
     case durationPending, verifiedManifest, statusUnknown
 
@@ -82,6 +90,11 @@ public struct AppStrings: Sendable {
       case .whisperExecutable: return "whisper.cpp 可执行文件"
       case .useBundled: return "使用内置"
       case .downloadedModel: return "已下载模型"
+      case .modelToDownload: return "下载模型"
+      case .modelMirror: return "下载源"
+      case .officialMirror: return "Hugging Face 官方"
+      case .hfMirror: return "HF-Mirror"
+      case .downloadModel: return "下载并使用"
       case .manualNone: return "手动 / 无"
       case .rescan: return "重新扫描"
       case .manualModel: return "手动模型"
@@ -122,7 +135,9 @@ public struct AppStrings: Sendable {
       switch self {
       case .meetings: return "Meetings"
       case .refresh: return "Refresh"
-      case .tagline: return "Local-first recording, post-stop Whisper transcription, exports, and folder-indexed history. No cloud processing."
+      case .tagline:
+        return
+          "Local-first recording, post-stop Whisper transcription, exports, and folder-indexed history. No cloud processing."
       case .language: return "Language"
       case .interfaceLanguage: return "Interface Language"
       case .transcriptionLanguage: return "Transcription Language"
@@ -137,10 +152,13 @@ public struct AppStrings: Sendable {
       case .editedMarkdown: return "Edited Markdown"
       case .markdownEditor: return "Markdown Editor"
       case .saveEditedMarkdown: return "Save Edited Markdown"
-      case .markdownSourceFinal: return "Source: machine final.md (saving writes edited.md, never overwrites original)"
+      case .markdownSourceFinal:
+        return "Source: machine final.md (saving writes edited.md, never overwrites original)"
       case .markdownSourceEdited: return "Source: user edited.md"
-      case .markdownWaitingForTranscript: return "No Markdown yet. final.md loads after transcription, or you can start notes here."
-      case .unsavedChanges: return "Unsaved changes will autosave before switching meetings or refreshing."
+      case .markdownWaitingForTranscript:
+        return "No Markdown yet. final.md loads after transcription, or you can start notes here."
+      case .unsavedChanges:
+        return "Unsaved changes will autosave before switching meetings or refreshing."
       case .capture: return "Capture"
       case .outputRoot: return "Output root"
       case .choose: return "Choose…"
@@ -153,6 +171,11 @@ public struct AppStrings: Sendable {
       case .whisperExecutable: return "whisper.cpp executable"
       case .useBundled: return "Use Bundled"
       case .downloadedModel: return "Downloaded model"
+      case .modelToDownload: return "Download model"
+      case .modelMirror: return "Download mirror"
+      case .officialMirror: return "Hugging Face official"
+      case .hfMirror: return "HF-Mirror"
+      case .downloadModel: return "Download and Use"
       case .manualNone: return "Manual / none"
       case .rescan: return "Rescan"
       case .manualModel: return "Manual model"
@@ -163,7 +186,9 @@ public struct AppStrings: Sendable {
       case .transcribeSelectedMeeting: return "Transcribe Selected Meeting"
       case .cancel: return "Cancel"
       case .regenerateChunkManifest: return "Regenerate Chunk Manifest"
-      case .idleTranscriptionHelp: return "During recording, delayed live drafts appear by chunk; after stopping, transcribe/overwrite final Markdown/SRT/JSON exports."
+      case .idleTranscriptionHelp:
+        return
+          "During recording, delayed live drafts appear by chunk; after stopping, transcribe/overwrite final Markdown/SRT/JSON exports."
       case .completedSegments(let count): return "Completed with \(count) final segment(s)."
       case .transcriptionCancelled: return "Transcription cancelled."
       case .transcriptionFailed(let message): return "Transcription failed: \(message)"
@@ -174,12 +199,15 @@ public struct AppStrings: Sendable {
       case .sandboxEntitlements: return "Sandbox/entitlements"
       case .model: return "Model"
       case .transcriptPreview: return "Delayed Live Transcript / Final Preview"
-      case .transcriptPreviewEmpty: return "Delayed live drafts during recording or final transcript segments appear here. Final exports stay in the selected meeting’s transcript folder."
+      case .transcriptPreviewEmpty:
+        return
+          "Delayed live drafts during recording or final transcript segments appear here. Final exports stay in the selected meeting’s transcript folder."
       case .selectedMeeting: return "Selected Meeting"
       case .openFolder: return "Open Folder"
       case .openArtifact(let label): return "Open \(label)"
       case .noMeetingSelected: return "No meeting selected"
-      case .noBundledExecutable: return "No bundled executable found; choose a local whisper.cpp executable"
+      case .noBundledExecutable:
+        return "No bundled executable found; choose a local whisper.cpp executable"
       case .sourceBundled: return "bundled"
       case .sourceProject: return "project"
       case .sourceManual: return "manual"
@@ -193,7 +221,9 @@ public struct AppStrings: Sendable {
       switch self {
       case .meetings: return "Besprechungen"
       case .refresh: return "Aktualisieren"
-      case .tagline: return "Lokale Aufnahme, Whisper-Transkription nach dem Stopp, Exporte und ordnerbasierter Verlauf. Keine Cloud-Verarbeitung."
+      case .tagline:
+        return
+          "Lokale Aufnahme, Whisper-Transkription nach dem Stopp, Exporte und ordnerbasierter Verlauf. Keine Cloud-Verarbeitung."
       case .language: return "Sprache"
       case .interfaceLanguage: return "Oberflächensprache"
       case .transcriptionLanguage: return "Transkriptionssprache"
@@ -208,10 +238,16 @@ public struct AppStrings: Sendable {
       case .editedMarkdown: return "Bearbeitetes Markdown"
       case .markdownEditor: return "Markdown-Editor"
       case .saveEditedMarkdown: return "Bearbeitetes Markdown speichern"
-      case .markdownSourceFinal: return "Quelle: maschinelles final.md (Speichern schreibt edited.md, Original bleibt erhalten)"
+      case .markdownSourceFinal:
+        return
+          "Quelle: maschinelles final.md (Speichern schreibt edited.md, Original bleibt erhalten)"
       case .markdownSourceEdited: return "Quelle: Benutzerdatei edited.md"
-      case .markdownWaitingForTranscript: return "Noch kein Markdown. final.md wird nach der Transkription geladen; Notizen sind hier möglich."
-      case .unsavedChanges: return "Ungespeicherte Änderungen werden vor dem Wechsel oder Aktualisieren automatisch gespeichert."
+      case .markdownWaitingForTranscript:
+        return
+          "Noch kein Markdown. final.md wird nach der Transkription geladen; Notizen sind hier möglich."
+      case .unsavedChanges:
+        return
+          "Ungespeicherte Änderungen werden vor dem Wechsel oder Aktualisieren automatisch gespeichert."
       case .capture: return "Aufnahme"
       case .outputRoot: return "Ausgabeordner"
       case .choose: return "Auswählen…"
@@ -224,6 +260,11 @@ public struct AppStrings: Sendable {
       case .whisperExecutable: return "whisper.cpp-Programm"
       case .useBundled: return "Integriertes verwenden"
       case .downloadedModel: return "Heruntergeladenes Modell"
+      case .modelToDownload: return "Modell herunterladen"
+      case .modelMirror: return "Download-Quelle"
+      case .officialMirror: return "Hugging Face offiziell"
+      case .hfMirror: return "HF-Mirror"
+      case .downloadModel: return "Herunterladen und verwenden"
       case .manualNone: return "Manuell / keines"
       case .rescan: return "Neu scannen"
       case .manualModel: return "Manuelles Modell"
@@ -234,7 +275,9 @@ public struct AppStrings: Sendable {
       case .transcribeSelectedMeeting: return "Ausgewählte Besprechung transkribieren"
       case .cancel: return "Abbrechen"
       case .regenerateChunkManifest: return "Chunk-Liste neu erzeugen"
-      case .idleTranscriptionHelp: return "Während der Aufnahme erscheinen verzögerte Live-Entwürfe pro Chunk; nach dem Stopp finale Markdown/SRT/JSON-Exporte transkribieren/überschreiben."
+      case .idleTranscriptionHelp:
+        return
+          "Während der Aufnahme erscheinen verzögerte Live-Entwürfe pro Chunk; nach dem Stopp finale Markdown/SRT/JSON-Exporte transkribieren/überschreiben."
       case .completedSegments(let count): return "Abgeschlossen mit \(count) finalen Segment(en)."
       case .transcriptionCancelled: return "Transkription abgebrochen."
       case .transcriptionFailed(let message): return "Transkription fehlgeschlagen: \(message)"
@@ -245,12 +288,15 @@ public struct AppStrings: Sendable {
       case .sandboxEntitlements: return "Sandbox/Berechtigungen"
       case .model: return "Modell"
       case .transcriptPreview: return "Verzögerte Live-Transkription / finale Vorschau"
-      case .transcriptPreviewEmpty: return "Verzögerte Live-Entwürfe während der Aufnahme oder finale Transkriptsegmente erscheinen hier. Finale Exporte bleiben im transcript-Ordner der Besprechung."
+      case .transcriptPreviewEmpty:
+        return
+          "Verzögerte Live-Entwürfe während der Aufnahme oder finale Transkriptsegmente erscheinen hier. Finale Exporte bleiben im transcript-Ordner der Besprechung."
       case .selectedMeeting: return "Ausgewählte Besprechung"
       case .openFolder: return "Ordner öffnen"
       case .openArtifact(let label): return "\(label) öffnen"
       case .noMeetingSelected: return "Keine Besprechung ausgewählt"
-      case .noBundledExecutable: return "Kein integriertes Programm gefunden; lokales whisper.cpp-Programm auswählen"
+      case .noBundledExecutable:
+        return "Kein integriertes Programm gefunden; lokales whisper.cpp-Programm auswählen"
       case .sourceBundled: return "integriert"
       case .sourceProject: return "Projekt"
       case .sourceManual: return "manuell"
