@@ -64,6 +64,8 @@ More detail:
 
 ```text
 docs/environment-safety.md
+docs/packaging-entitlements.md
+docs/model-strategy.md
 ```
 
 ## Model Files

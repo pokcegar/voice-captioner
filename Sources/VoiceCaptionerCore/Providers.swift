@@ -120,7 +120,9 @@ public protocol DiarizationProvider: Sendable {
     func label(segments: [TranscriptSegment], tracks: [AudioTrack]) async throws -> [TranscriptSegment]
 }
 
-public enum TrackAwareDiarizationProvider: DiarizationProvider {
+public struct TrackAwareDiarizationProvider: DiarizationProvider {
+    public init() {}
+    
     public func label(segments: [TranscriptSegment], tracks: [AudioTrack]) async throws -> [TranscriptSegment] {
         segments.map { segment in
             var labeled = segment

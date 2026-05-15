@@ -1,0 +1,10 @@
+{
+  "filename": "ggml-medium.bin",
+  "path": "/Users/zzy/project/voicewisper/voice-captioner/Models/ggml-medium.bin",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+  "proxy": "http://127.0.0.1:7890",
+  "size_bytes": 17108992,
+  "sha256": "29a5765fec925894b8751fc1ee06644403ff027217c5b2913a26cbe23b3a71e9",
+  "status": "incomplete_or_invalid_download",
+  "note": "Download was interrupted/too slow before completion. Resume with curl --continue-at - or scripts/download-whisper-model.sh medium."
+}

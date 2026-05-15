@@ -1,0 +1,10 @@
+{
+  "filename": "ggml-small.bin",
+  "path": "/Users/zzy/project/voicewisper/voice-captioner/Models/ggml-small.bin",
+  "source_url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+  "proxy": "http://127.0.0.1:7890",
+  "size_bytes": 4841472,
+  "sha256": "89640a61cdc1ffc088c3c7ad3d42e140b9dabc19661a96f2b5a210fc25b429ee",
+  "status": "incomplete_or_invalid_download",
+  "note": "Download was interrupted/too slow before completion. Resume with curl --continue-at - or scripts/download-whisper-model.sh small."
+}
