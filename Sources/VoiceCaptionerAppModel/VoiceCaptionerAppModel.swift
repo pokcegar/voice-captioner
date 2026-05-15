@@ -38,6 +38,13 @@ public enum EditableMarkdownSource: Equatable, Sendable {
   case none
   case finalMarkdown
   case editedMarkdown
+  case empty
+}
+
+public enum EditableMarkdownSource: Equatable, Sendable {
+  case empty
+  case finalMarkdown
+  case editedMarkdown
 
   public var filename: String? {
     switch self {
@@ -515,6 +522,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   }
 
   public func transcribeSelectedMeeting() async {
+    autosaveEditableMarkdownIfDirty()
     guard let meeting = selectedMeeting else {
       status = statusText(.selectMeetingBeforeTranscription)
       return
@@ -548,7 +556,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       transcriptionState = .completed(segmentCount: result.finalSegments.count)
       status = statusText(.transcriptionComplete)
       refreshHistoryPreservingSelection()
-      loadEditableMarkdown(for: meeting(withID: meeting.metadata.id))
+      loadEditableMarkdown(for: selectedMeeting)
+      loadEditableMarkdown(for: selectedMeeting)
     } catch is CancellationError {
       transcriptionState = .cancelled
       status = statusText(.localTranscriptionCancelled)
