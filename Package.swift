@@ -9,6 +9,7 @@ let package = Package(
     ],
     products: [
         .library(name: "VoiceCaptionerCore", targets: ["VoiceCaptionerCore"]),
+        .library(name: "VoiceCaptionerAppModel", targets: ["VoiceCaptionerAppModel"]),
         .executable(name: "voice-captioner-app", targets: ["VoiceCaptionerApp"]),
         .executable(name: "microphone-smoke", targets: ["MicrophoneSmoke"]),
         .executable(name: "system-audio-smoke", targets: ["SystemAudioSmoke"]),
@@ -19,9 +20,13 @@ let package = Package(
         .target(
             name: "VoiceCaptionerCore"
         ),
+        .target(
+            name: "VoiceCaptionerAppModel",
+            dependencies: ["VoiceCaptionerCore"]
+        ),
         .executableTarget(
             name: "VoiceCaptionerApp",
-            dependencies: ["VoiceCaptionerCore"]
+            dependencies: ["VoiceCaptionerAppModel", "VoiceCaptionerCore"]
         ),
         .executableTarget(
             name: "MicrophoneSmoke",
@@ -42,6 +47,10 @@ let package = Package(
         .testTarget(
             name: "VoiceCaptionerCoreTests",
             dependencies: ["VoiceCaptionerCore"]
+        ),
+        .testTarget(
+            name: "VoiceCaptionerAppModelTests",
+            dependencies: ["VoiceCaptionerAppModel", "VoiceCaptionerCore"]
         )
     ]
 )
