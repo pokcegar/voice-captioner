@@ -1,0 +1,28 @@
+# Context Snapshot: UI console redesign
+
+- Task statement: Clarify redesign direction for VoiceCaptioner UI: left history, center recording status/subtitle display, right settings, like a control console.
+- Desired outcome: Execution-ready UI/UX spec before implementation.
+- Stated solution: 中间是录音状态/字幕显示，左边是历史，右边是设置，做成中控台一样。
+- Probable intent hypothesis: Current single-column mixed forms confuse app preferences, capture workflow, transcription settings, and transcript output; user wants a clearer operator-console layout.
+- Known facts/evidence:
+  - `DESIGN.md` now says app preferences should be separate from meeting workflow controls.
+  - `Sources/VoiceCaptionerApp/ContentView.swift` currently uses `NavigationSplitView`: left meeting history, detail scroll with header, capture settings, model settings, record controls, transcription controls, capabilities, transcript preview, selected meeting details, and status.
+  - Current UI language picker is inside capture settings, which user identified as misleading.
+  - Delayed live transcription was added: drafts can appear during recording; final exports remain post-stop.
+- Constraints:
+  - SwiftUI macOS app, local-only.
+  - Keep left history.
+  - Need distinguish UI language vs audio/transcription language.
+  - Avoid claiming zero-latency live subtitles; current capability is delayed live drafts.
+- Unknowns/open questions:
+  - Whether right panel should contain all settings always, or separate app settings from session settings.
+  - Center priority: waveform/status, live captions, final transcript, or action buttons.
+  - How dense “中控台” should feel: simple consumer UI vs pro/operator dashboard.
+- Decision-boundary unknowns:
+  - Can OMX decide exact layout and visual style after a direction is chosen?
+  - Which controls must be visible in the first screen vs tucked into advanced settings?
+- Likely codebase touchpoints:
+  - `Sources/VoiceCaptionerApp/ContentView.swift`
+  - `Sources/VoiceCaptionerAppModel/Localization.swift`
+  - `DESIGN.md`
+- Prompt-safe initial-context summary status: not_needed
