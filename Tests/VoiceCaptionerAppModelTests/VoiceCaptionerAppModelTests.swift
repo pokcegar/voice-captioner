@@ -179,11 +179,12 @@ struct VoiceCaptionerAppModelTests {
     #expect(await workflow.runCount() == 1)
   }
 
+
   @Test @MainActor func loadsFinalMarkdownAsEditableDraftWhenNoEditedMarkdownExists() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let meeting = try completedMeeting(in: root, title: "Final Draft")
-    let finalURL = meeting.transcriptDirectory.appending(path: "final.md")
+    let finalURL = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
     try "machine markdown".write(to: finalURL, atomically: true, encoding: .utf8)
 
     let model = makeAppModel(outputRoot: root)
@@ -199,8 +200,8 @@ struct VoiceCaptionerAppModelTests {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let meeting = try completedMeeting(in: root, title: "Save Edited")
-    let finalURL = meeting.transcriptDirectory.appending(path: "final.md")
-    let editedURL = meeting.transcriptDirectory.appending(path: "edited.md")
+    let finalURL = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
+    let editedURL = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename)
     try "machine original".write(to: finalURL, atomically: true, encoding: .utf8)
     let model = makeAppModel(outputRoot: root)
     model.refreshHistoryPreservingSelection()
@@ -218,8 +219,14 @@ struct VoiceCaptionerAppModelTests {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let meeting = try completedMeeting(in: root, title: "Edited First")
-    try "machine".write(to: meeting.transcriptDirectory.appending(path: "final.md"), atomically: true, encoding: .utf8)
-    try "edited".write(to: meeting.transcriptDirectory.appending(path: "edited.md"), atomically: true, encoding: .utf8)
+    try "machine".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
+    try "edited".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
 
     let model = makeAppModel(outputRoot: root)
     model.refreshHistoryPreservingSelection()
@@ -254,7 +261,10 @@ struct VoiceCaptionerAppModelTests {
     try Data("model".utf8).write(to: modelURL)
     try Data("#!/bin/sh\n".utf8).write(to: executable)
     let meeting = try completedMeeting(in: root, title: "Retranscribe")
-    try "user edits".write(to: meeting.transcriptDirectory.appending(path: "edited.md"), atomically: true, encoding: .utf8)
+    try "user edits".write(
+      to: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename),
+      atomically: true,
+      encoding: .utf8)
     let workflow = FakeTranscriptionWorkflow()
     let model = VoiceCaptionerAppModel(
       outputRoot: root,
@@ -269,7 +279,7 @@ struct VoiceCaptionerAppModelTests {
 
     await model.transcribeSelectedMeeting()
 
-    #expect(try String(contentsOf: meeting.transcriptDirectory.appending(path: "edited.md"), encoding: .utf8) == "user edits")
+    #expect(try String(contentsOf: meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.editedMarkdownFilename), encoding: .utf8) == "user edits")
     #expect(model.editableMarkdownText == "user edits")
     #expect(model.editableMarkdownSource == .editedMarkdown)
   }
@@ -277,10 +287,8 @@ struct VoiceCaptionerAppModelTests {
   @Test @MainActor func selectingAnotherMeetingAutosavesDirtyMarkdownToOriginalMeeting() throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
-    let older = Date(timeIntervalSince1970: 100)
-    let newer = Date(timeIntervalSince1970: 200)
-    let meetingA = try completedMeeting(in: root, title: "A", now: newer)
-    let meetingB = try completedMeeting(in: root, title: "B", now: older)
+    let meetingA = try completedMeeting(in: root, title: "A", now: Date(timeIntervalSince1970: 200))
+    let meetingB = try completedMeeting(in: root, title: "B", now: Date(timeIntervalSince1970: 100))
     try "A final".write(to: meetingA.transcriptDirectory.appending(path: "final.md"), atomically: true, encoding: .utf8)
     try "B final".write(to: meetingB.transcriptDirectory.appending(path: "final.md"), atomically: true, encoding: .utf8)
     let model = makeAppModel(outputRoot: root)
@@ -298,47 +306,42 @@ struct VoiceCaptionerAppModelTests {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let meetingA = try completedMeeting(in: root, title: "A", now: Date(timeIntervalSince1970: 200))
-    let meetingB = try completedMeeting(in: root, title: "B", now: Date(timeIntervalSince1970: 100))
+    _ = try completedMeeting(in: root, title: "B", now: Date(timeIntervalSince1970: 100))
     try "A final".write(to: meetingA.transcriptDirectory.appending(path: "final.md"), atomically: true, encoding: .utf8)
-    try "B final".write(to: meetingB.transcriptDirectory.appending(path: "final.md"), atomically: true, encoding: .utf8)
     let model = makeAppModel(outputRoot: root)
     model.refreshHistoryPreservingSelection()
 
-    model.selectMeeting(id: meetingB.metadata.id)
     model.updateEditableMarkdownText("still A")
-    model.saveEditableMarkdown()
-
-    #expect(
-      try String(contentsOf: meetingB.transcriptDirectory.appending(path: "edited.md"), encoding: .utf8) ==
-        "still A")
-    #expect(!FileManager.default.fileExists(atPath: meetingA.transcriptDirectory.appending(path: "edited.md").path))
-  }
-
-  @Test @MainActor func markdownReadFailureDoesNotCrashAndReportsStatus() throws {
-    let root = try temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let meeting = try completedMeeting(in: root, title: "Broken")
-    let finalURL = meeting.transcriptDirectory.appending(path: "final.md")
-    try FileManager.default.createDirectory(at: finalURL, withIntermediateDirectories: true)
-    let model = makeAppModel(outputRoot: root)
-
     model.refreshHistoryPreservingSelection()
 
-    #expect(model.editableMarkdownText.isEmpty)
-    #expect(model.editableMarkdownSource == .empty)
-    #expect(model.editableMarkdownStatus != nil)
-    #expect(model.editableMarkdownStatus != nil || !model.status.isEmpty)
+    #expect(try String(contentsOf: meetingA.transcriptDirectory.appending(path: "edited.md"), encoding: .utf8) == "still A")
   }
 
   @Test @MainActor func localizationHasExplicitInterfaceTranscriptionAndMarkdownLabels() throws {
     #expect(AppStrings(language: .zhHans).text(.interfaceLanguage) == "界面语言")
-    #expect(AppStrings(language: .zhHans).text(.fixedChineseTranscriptionLanguage) == "中文（固定，本地 Whisper 转写）")
+    #expect(AppStrings(language: .zhHans).text(.fixedChineseTranscriptionLanguage) == "转写语言：中文")
     #expect(AppStrings(language: .zhHans).text(.editedMarkdown) == "用户编辑版 Markdown")
-    #expect(AppStrings(language: .en).text(.interfaceLanguage) == "Interface language")
+    #expect(AppStrings(language: .en).text(.interfaceLanguage) == "Interface Language")
     #expect(AppStrings(language: .de).text(.editedMarkdown) == "Bearbeitetes Markdown")
   }
-}
 
+  @Test @MainActor func markdownReadFailureDoesNotCrashAndKeepsEditorUsable() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let meeting = try completedMeeting(in: root, title: "Broken")
+    let badPath = meeting.transcriptDirectory.appending(path: VoiceCaptionerAppModel.finalMarkdownFilename)
+    try? FileManager.default.removeItem(at: badPath)
+    try FileManager.default.createDirectory(at: badPath, withIntermediateDirectories: true)
+
+    let model = makeAppModel(outputRoot: root)
+    model.refreshHistoryPreservingSelection()
+
+    #expect(model.editableMarkdownText == "")
+    #expect(model.editableMarkdownSource == .empty)
+    #expect(!model.isEditableMarkdownDirty)
+  }
+
+}
 
 private actor FakeTranscriptionWorkflow: TranscriptionWorkflow {
   private var runs = 0

@@ -49,11 +49,7 @@ struct ContentView: View {
 
   private var consoleLayout: some View {
     HStack(spacing: 0) {
-      MeetingWorkspaceView(
-        viewModel: viewModel,
-        openMeetingFolder: { NSWorkspace.shared.open($0.rootURL) },
-        openArtifact: { NSWorkspace.shared.open($0.url) }
-      )
+      MeetingWorkspaceView(viewModel: viewModel)
       .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
 
       Divider()

@@ -34,24 +34,6 @@ public struct TranscriptExportArtifact: Equatable, Sendable, Identifiable {
   }
 }
 
-public enum EditableMarkdownSource: Equatable, Sendable {
-  case none
-  case finalMarkdown
-  case editedMarkdown
-}
-
-
-public enum EditableMarkdownSource: Equatable, Sendable {
-  case none
-  case finalMarkdown
-  case editedMarkdown
-
-  public var isEditableCopy: Bool {
-    if case .editedMarkdown = self { return true }
-    return false
-  }
-}
-
 public struct WhisperExecutableCandidate: Equatable, Sendable {
   public var url: URL
   public var source: String
@@ -126,19 +108,17 @@ public struct LocalWhisperTranscriptionWorkflow: TranscriptionWorkflow, LiveTran
     whisperExecutableURL: URL,
     chunkDuration: TimeInterval
   ) async throws -> RollingTranscriptionResult {
-    let pipeline = RollingTranscriptionPipeline(
-      transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+    let pipeline = RollingTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
     return try await pipeline.run(meeting: meeting, model: model, chunkDuration: chunkDuration)
   }
 
   public func makePipeline(whisperExecutableURL: URL) -> LiveTranscriptionPipeline {
-    LiveTranscriptionPipeline(
-      transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
+    LiveTranscriptionPipeline(transcriber: makeTranscriber(whisperExecutableURL: whisperExecutableURL))
   }
 
   private func makeTranscriber(whisperExecutableURL: URL) -> WhisperProcessTranscriber {
     WhisperProcessTranscriber(
-      configuration: WhisperProcessConfiguration(executableURL: whisperExecutableURL, language: "zh")
+      configuration: WhisperProcessConfiguration(executableURL: whisperExecutableURL)
     )
   }
 }
@@ -166,22 +146,13 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   @Published public private(set) var activeMeeting: MeetingFolder?
   @Published public private(set) var captureResult: CaptureResult?
   @Published public private(set) var rollingPreview: [TranscriptSegment]
-  @Published public var editableMarkdownText: String
-  @Published public private(set) var editableMarkdownSource: EditableMarkdownSource
-  @Published public private(set) var editableMarkdownMeetingID: String?
-  @Published public private(set) var isEditableMarkdownDirty: Bool
   @Published public private(set) var downloadedModels: [DownloadedWhisperModel]
   @Published public var selectedDownloadedModelPath: String?
   @Published public private(set) var manualModelURL: URL?
   @Published public private(set) var whisperExecutableURL: URL?
   @Published public private(set) var whisperExecutableSource: String?
   @Published public private(set) var transcriptionState: TranscriptionWorkflowState
-  @Published public private(set) var editableMarkdownText: String
-  @Published public private(set) var editableMarkdownSource: EditableMarkdownSource
-  @Published public private(set) var editableMarkdownMeetingID: String?
-  @Published public private(set) var isEditableMarkdownDirty: Bool
-  @Published public private(set) var editableMarkdownStatus: String?
-  @Published public private(set) var editableMarkdownText: String
+  @Published public var editableMarkdownText: String
   @Published public private(set) var editableMarkdownSource: EditableMarkdownSource
   @Published public private(set) var editableMarkdownMeetingID: String?
   @Published public private(set) var isEditableMarkdownDirty: Bool
@@ -197,8 +168,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   private var liveTranscriptionTask: Task<Void, Never>?
   private var liveTranscriptionPipeline: LiveTranscriptionPipeline?
 
-  public static let finalMarkdownFilename = "final.md"
-  public static let editedMarkdownFilename = "edited.md"
 
   public static func defaultModelsDirectory(bundle: Bundle = .main) -> URL {
     let bundledModels = bundle.resourceURL?.appending(path: "Models", directoryHint: .isDirectory)
@@ -220,8 +189,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     provider: any AudioCaptureProvider = NativeMacCaptureProvider(captureGatePassed: true),
     modelsDirectory: URL = VoiceCaptionerAppModel.defaultModelsDirectory(),
     transcriptionWorkflow: any TranscriptionWorkflow = LocalWhisperTranscriptionWorkflow(),
-    liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)? =
-      LocalWhisperTranscriptionWorkflow(),
+    liveTranscriptionWorkflow: (any LiveTranscriptionWorkflow)? = LocalWhisperTranscriptionWorkflow(),
     defaultWhisperExecutable: WhisperExecutableCandidate? =
       WhisperExecutableLocator.firstAvailable()
   ) {
@@ -243,21 +211,12 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     self.activeMeeting = nil
     self.captureResult = nil
     self.rollingPreview = []
-    self.editableMarkdownText = ""
-    self.editableMarkdownSource = .none
-    self.editableMarkdownMeetingID = nil
-    self.isEditableMarkdownDirty = false
     self.downloadedModels = []
     self.selectedDownloadedModelPath = nil
     self.manualModelURL = nil
     self.whisperExecutableURL = defaultWhisperExecutable?.url
     self.whisperExecutableSource = defaultWhisperExecutable?.source
     self.transcriptionState = .idle
-    self.editableMarkdownText = ""
-    self.editableMarkdownSource = .none
-    self.editableMarkdownMeetingID = nil
-    self.isEditableMarkdownDirty = false
-    self.editableMarkdownStatus = nil
     self.editableMarkdownText = ""
     self.editableMarkdownSource = .empty
     self.editableMarkdownMeetingID = nil
@@ -280,20 +239,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   }
 
   public var selectedMeeting: MeetingFolder? {
-    meeting(withID: selectedMeetingID)
-  }
-
-  public var canSaveEditableMarkdown: Bool {
-    editableMarkdownMeetingID != nil
-  }
-
-  private func meeting(withID id: String?) -> MeetingFolder? {
-    guard let id else { return nil }
-    return meetings.first { $0.metadata.id == id }
-  }
-
-  public var canSaveEditableMarkdown: Bool {
-    editableMarkdownMeetingID != nil
+    meetings.first { $0.metadata.id == selectedMeetingID }
   }
 
   public var selectedWhisperModel: WhisperModel? {
@@ -320,88 +266,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       && !transcriptionState.isRunning
   }
 
-  public func selectMeeting(id: String?) {
-    selectedMeetingID = id
-  }
-
-  public func updateEditableMarkdownText(_ text: String) {
-    guard editableMarkdownMeetingID != nil else {
-      editableMarkdownText = text
-      editableMarkdownSource = .none
-      isEditableMarkdownDirty = false
-      return
-    }
-    editableMarkdownText = text
-    isEditableMarkdownDirty = true
-    editableMarkdownStatus = nil
-  }
-
-  public func finalMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(path: Self.finalMarkdownFilename, directoryHint: .notDirectory)
-  }
-
-  public func editedMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(path: Self.editedMarkdownFilename, directoryHint: .notDirectory)
-  }
-
-  public func loadEditableMarkdown(for meeting: MeetingFolder?) {
-    guard let meeting else {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      editableMarkdownMeetingID = nil
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = nil
-      return
-    }
-
-    let editedURL = editedMarkdownURL(for: meeting)
-    let finalURL = finalMarkdownURL(for: meeting)
-    do {
-      if FileManager.default.fileExists(atPath: editedURL.path) {
-        editableMarkdownText = try String(contentsOf: editedURL, encoding: .utf8)
-        editableMarkdownSource = .editedMarkdown
-      } else if FileManager.default.fileExists(atPath: finalURL.path) {
-        editableMarkdownText = try String(contentsOf: finalURL, encoding: .utf8)
-        editableMarkdownSource = .finalMarkdown
-      } else {
-        editableMarkdownText = ""
-        editableMarkdownSource = .none
-      }
-      editableMarkdownMeetingID = meeting.metadata.id
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = nil
-    } catch {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      editableMarkdownMeetingID = meeting.metadata.id
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = statusText(.editableMarkdownLoadFailed(error.localizedDescription))
-      status = editableMarkdownStatus ?? status
-    }
-  }
-
-  public func saveEditableMarkdown() {
-    guard let meetingID = editableMarkdownMeetingID,
-      let meeting = meetings.first(where: { $0.metadata.id == meetingID })
-    else { return }
-
-    do {
-      try FileManager.default.createDirectory(
-        at: meeting.transcriptDirectory, withIntermediateDirectories: true)
-      try editableMarkdownText.write(
-        to: editedMarkdownURL(for: meeting), atomically: true, encoding: .utf8)
-      editableMarkdownSource = .editedMarkdown
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = statusText(.editableMarkdownSaved)
-    } catch {
-      editableMarkdownStatus = statusText(.editableMarkdownSaveFailed(error.localizedDescription))
-      status = editableMarkdownStatus ?? status
-    }
-  }
-
-  public func autosaveEditableMarkdownIfDirty() {
-    guard isEditableMarkdownDirty else { return }
-    saveEditableMarkdown()
+  public var canSaveEditableMarkdown: Bool {
+    editableMarkdownMeetingID != nil && isEditableMarkdownDirty
   }
 
   public func refreshAll() {
@@ -429,27 +295,18 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   public func refreshHistoryPreservingSelection() {
     autosaveEditableMarkdownIfDirty()
     let previousSelection = selectedMeetingID
-    autosaveEditableMarkdownIfDirty()
     do {
       meetings = try store.scanMeetings(outputRoot: outputRoot)
-      let nextSelection: String?
       if let previousSelection, meetings.contains(where: { $0.metadata.id == previousSelection }) {
-        nextSelection = previousSelection
+        selectedMeetingID = previousSelection
       } else {
-        nextSelection = meetings.first?.metadata.id
+        selectedMeetingID = meetings.first?.metadata.id
       }
       loadEditableMarkdown(for: selectedMeeting)
       status = statusText(.indexedMeetings(count: meetings.count))
     } catch {
       status = statusText(.historyError(error.localizedDescription))
     }
-  }
-
-  public func selectMeeting(id: String?) {
-    guard id != selectedMeetingID else { return }
-    autosaveEditableMarkdownIfDirty()
-    selectedMeetingID = id
-    loadEditableMarkdown(for: meeting(withID: id))
   }
 
   public func refreshPermissions() async {
@@ -499,95 +356,8 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     if path != nil { manualModelURL = nil }
   }
 
-  public func selectMeeting(id: String?) {
-    guard id != selectedMeetingID else { return }
-    autosaveEditableMarkdownIfDirty()
-    selectedMeetingID = id
-    loadEditableMarkdown(for: selectedMeeting)
-  }
-
-  public func editedMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(
-      path: Self.editedMarkdownFilename, directoryHint: .notDirectory)
-  }
-
-  public func finalMarkdownURL(for meeting: MeetingFolder) -> URL {
-    meeting.transcriptDirectory.appending(
-      path: Self.finalMarkdownFilename, directoryHint: .notDirectory)
-  }
-
-  public func loadEditableMarkdown(for meeting: MeetingFolder?) {
-    guard let meeting else {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      editableMarkdownMeetingID = nil
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = nil
-      return
-    }
-
-    editableMarkdownMeetingID = meeting.metadata.id
-    let editedURL = editedMarkdownURL(for: meeting)
-    let finalURL = finalMarkdownURL(for: meeting)
-    do {
-      if FileManager.default.fileExists(atPath: editedURL.path) {
-        editableMarkdownText = try String(contentsOf: editedURL, encoding: .utf8)
-        editableMarkdownSource = .editedMarkdown
-        editableMarkdownStatus = strings.text(.markdownSourceEdited)
-      } else if FileManager.default.fileExists(atPath: finalURL.path) {
-        editableMarkdownText = try String(contentsOf: finalURL, encoding: .utf8)
-        editableMarkdownSource = .finalMarkdown
-        editableMarkdownStatus = strings.text(.markdownSourceFinal)
-      } else {
-        editableMarkdownText = ""
-        editableMarkdownSource = .none
-        editableMarkdownStatus = strings.text(.markdownWaitingForTranscript)
-      }
-      isEditableMarkdownDirty = false
-    } catch {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = statusText(.editableMarkdownLoadFailed(error.localizedDescription))
-    }
-  }
-
-  public func updateEditableMarkdownText(_ text: String) {
-    guard text != editableMarkdownText else { return }
-    editableMarkdownText = text
-    isEditableMarkdownDirty = true
-    editableMarkdownStatus = strings.text(.markdownUnsavedChanges)
-  }
-
-  public func saveEditableMarkdown() {
-    guard let meetingID = editableMarkdownMeetingID,
-      let meeting = meetings.first(where: { $0.metadata.id == meetingID })
-    else {
-      editableMarkdownStatus = statusText(.editableMarkdownSaveFailed("No loaded meeting"))
-      return
-    }
-
-    do {
-      try FileManager.default.createDirectory(
-        at: meeting.transcriptDirectory, withIntermediateDirectories: true)
-      try editableMarkdownText.write(
-        to: editedMarkdownURL(for: meeting), atomically: true, encoding: .utf8)
-      editableMarkdownSource = .editedMarkdown
-      isEditableMarkdownDirty = false
-      editableMarkdownStatus = statusText(.editableMarkdownSaved)
-    } catch {
-      editableMarkdownStatus = statusText(.editableMarkdownSaveFailed(error.localizedDescription))
-    }
-  }
-
-  public func autosaveEditableMarkdownIfDirty() {
-    guard isEditableMarkdownDirty else { return }
-    saveEditableMarkdown()
-  }
-
   public func startRecording() async {
     guard !isRecording else { return }
-    autosaveEditableMarkdownIfDirty()
     do {
       let title = normalizedMeetingTitle()
       let meeting = try store.createMeeting(
@@ -599,8 +369,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       rollingPreview = []
       transcriptionState = .idle
       isRecording = true
-      selectedMeetingID = meeting.metadata.id
-      loadEditableMarkdown(for: meeting)
+      selectMeeting(id: meeting.metadata.id)
       status = statusText(.recording(meeting.metadata.title))
       startLiveTranscriptionIfPossible(for: meeting)
       refreshHistoryPreservingSelection()
@@ -623,7 +392,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
         meeting.metadata = try store.readMetadata(at: meeting.metadataURL)
         activeMeeting = meeting
         selectMeeting(id: meeting.metadata.id)
-        loadEditableMarkdown(for: meeting)
         if rollingPreview.isEmpty {
           rollingPreview = previewSegments(from: result)
         }
@@ -640,13 +408,11 @@ public final class VoiceCaptionerAppModel: ObservableObject {
 
   private func startLiveTranscriptionIfPossible(for meeting: MeetingFolder) {
     guard liveTranscriptionTask == nil else { return }
-    guard let model = selectedWhisperModel, let whisperExecutableURL, let liveTranscriptionWorkflow
-    else {
+    guard let model = selectedWhisperModel, let whisperExecutableURL, let liveTranscriptionWorkflow else {
       status = statusText(.recordingWithoutLiveTranscription(meeting.metadata.title))
       return
     }
-    let pipeline = liveTranscriptionWorkflow.makePipeline(
-      whisperExecutableURL: whisperExecutableURL)
+    let pipeline = liveTranscriptionWorkflow.makePipeline(whisperExecutableURL: whisperExecutableURL)
     liveTranscriptionPipeline = pipeline
     let chunkDuration = max(5, chunkDurationSeconds)
     let pollInterval = max(0.1, min(2, min(delaySeconds, chunkDuration) / 2))
@@ -655,8 +421,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
         guard !Task.isCancelled else { return }
-        await self.pollLiveTranscription(
-          meeting: meeting, model: model, pipeline: pipeline, chunkDuration: chunkDuration)
+        await self.pollLiveTranscription(meeting: meeting, model: model, pipeline: pipeline, chunkDuration: chunkDuration)
       }
     }
   }
@@ -668,8 +433,7 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     chunkDuration: TimeInterval
   ) async {
     do {
-      let update = try await pipeline.poll(
-        meeting: meeting, model: model, chunkDuration: chunkDuration)
+      let update = try await pipeline.poll(meeting: meeting, model: model, chunkDuration: chunkDuration)
       if !update.draftSegments.isEmpty {
         rollingPreview = update.draftSegments
         status = statusText(.liveTranscriptionUpdated(segmentCount: update.draftSegments.count))
@@ -688,7 +452,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
   }
 
   public func transcribeSelectedMeeting() async {
-    autosaveEditableMarkdownIfDirty()
     guard let meeting = selectedMeeting else {
       status = statusText(.selectMeetingBeforeTranscription)
       return
@@ -705,7 +468,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     autosaveEditableMarkdownIfDirty()
     transcriptionState = .running(message: statusText(.chunkingAndTranscribing))
     status = statusText(.transcribing(meeting.metadata.title))
-    autosaveEditableMarkdownIfDirty()
     do {
       let result = try await transcriptionWorkflow.run(
         meeting: meeting,
@@ -722,8 +484,6 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       transcriptionState = .completed(segmentCount: result.finalSegments.count)
       status = statusText(.transcriptionComplete)
       refreshHistoryPreservingSelection()
-      loadEditableMarkdown(for: selectedMeeting)
-      loadEditableMarkdown(for: selectedMeeting)
       loadEditableMarkdown(for: selectedMeeting)
     } catch is CancellationError {
       transcriptionState = .cancelled
@@ -843,80 +603,15 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     guard let meeting = meeting ?? selectedMeeting else { return [] }
     let directory = meeting.transcriptDirectory
     let artifacts = [
-      ("Machine Markdown", directory.appending(path: "final.md", directoryHint: .notDirectory)),
+      ("Machine Markdown", finalMarkdownURL(for: meeting)),
       ("SRT", directory.appending(path: "final.srt", directoryHint: .notDirectory)),
       ("JSON", directory.appending(path: "final.json", directoryHint: .notDirectory)),
-      ("Edited Markdown", directory.appending(path: "edited.md", directoryHint: .notDirectory)),
+      ("Edited Markdown", editedMarkdownURL(for: meeting)),
     ]
     return artifacts.map { label, url in
       TranscriptExportArtifact(
         label: label, url: url, exists: FileManager.default.fileExists(atPath: url.path))
     }
-  }
-
-  public func loadEditableMarkdown(for meeting: MeetingFolder?) {
-    guard let meeting else {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      editableMarkdownMeetingID = nil
-      isEditableMarkdownDirty = false
-      return
-    }
-
-    let editedURL = editedMarkdownURL(for: meeting)
-    let finalURL = finalMarkdownURL(for: meeting)
-    do {
-      if FileManager.default.fileExists(atPath: editedURL.path) {
-        editableMarkdownText = try String(contentsOf: editedURL, encoding: .utf8)
-        editableMarkdownSource = .editedMarkdown
-      } else if FileManager.default.fileExists(atPath: finalURL.path) {
-        editableMarkdownText = try String(contentsOf: finalURL, encoding: .utf8)
-        editableMarkdownSource = .finalMarkdown
-      } else {
-        editableMarkdownText = ""
-        editableMarkdownSource = .none
-      }
-      editableMarkdownMeetingID = meeting.metadata.id
-      isEditableMarkdownDirty = false
-    } catch {
-      editableMarkdownText = ""
-      editableMarkdownSource = .none
-      editableMarkdownMeetingID = meeting.metadata.id
-      isEditableMarkdownDirty = false
-      status = statusText(.markdownReadFailed(error.localizedDescription))
-    }
-  }
-
-  public func updateEditableMarkdownText(_ text: String) {
-    guard text != editableMarkdownText else { return }
-    editableMarkdownText = text
-    isEditableMarkdownDirty = true
-  }
-
-  public func saveEditableMarkdown() {
-    guard
-      let meetingID = editableMarkdownMeetingID,
-      let meeting = meetings.first(where: { $0.metadata.id == meetingID })
-    else {
-      status = statusText(.editableMarkdownNoMeeting)
-      return
-    }
-    do {
-      try FileManager.default.createDirectory(
-        at: meeting.transcriptDirectory, withIntermediateDirectories: true)
-      try editableMarkdownText.write(
-        to: editedMarkdownURL(for: meeting), atomically: true, encoding: .utf8)
-      editableMarkdownSource = .editedMarkdown
-      isEditableMarkdownDirty = false
-      status = statusText(.editableMarkdownSaved)
-    } catch {
-      status = statusText(.editableMarkdownSaveFailed(error.localizedDescription))
-    }
-  }
-
-  public func autosaveEditableMarkdownIfDirty() {
-    guard isEditableMarkdownDirty else { return }
-    saveEditableMarkdown()
   }
 
   private enum AppStatusMessage {
@@ -1022,9 +717,9 @@ public final class VoiceCaptionerAppModel: ObservableObject {
       return "正在本地录制“\(title)”；选择本地模型和 whisper.cpp 后可启用延迟实时转写。"
     case (.zhHans, .liveTranscriptionUpdated(let count)): return "延迟实时转写已更新：\(count) 个草稿片段。"
     case (.zhHans, .liveTranscriptionFailed(let error)): return "延迟实时转写失败：\(error)"
-    case (.zhHans, .editableMarkdownSaved): return "用户编辑版 Markdown 已保存。"
+    case (.zhHans, .editableMarkdownSaved): return "用户编辑版 Markdown 已自动保存。"
     case (.zhHans, .editableMarkdownLoadFailed(let error)): return "读取 Markdown 编辑内容失败：\(error)"
-    case (.zhHans, .editableMarkdownSaveFailed(let error)): return "保存 Markdown 编辑内容失败：\(error)"
+    case (.zhHans, .editableMarkdownSaveFailed(let error)): return "保存用户编辑版 Markdown 失败：\(error)"
 
     case (.en, .ready): return "Ready — local-only recording and transcription"
     case (.en, .noDownloadedModels(let needsExecutable)):
@@ -1072,16 +767,13 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.en, .capturedTrackPreview(let track)):
       return "Captured \(track) track; run local transcription to replace this draft."
     case (.en, .recordingWithoutLiveTranscription(let title)):
-      return
-        "Recording \(title) locally; choose a local model and whisper.cpp executable to enable delayed live transcription."
+      return "Recording \(title) locally; choose a local model and whisper.cpp executable to enable delayed live transcription."
     case (.en, .liveTranscriptionUpdated(let count)):
       return "Delayed live transcription updated: \(count) draft segment(s)."
     case (.en, .liveTranscriptionFailed(let error)): return "Delayed live transcription failed: \(error)"
-    case (.en, .editableMarkdownSaved): return "Edited Markdown saved."
-    case (.en, .editableMarkdownLoadFailed(let error)):
-      return "Failed to load editable Markdown: \(error)"
-    case (.en, .editableMarkdownSaveFailed(let error)):
-      return "Failed to save editable Markdown: \(error)"
+    case (.en, .editableMarkdownSaved): return "Edited Markdown autosaved."
+    case (.en, .editableMarkdownLoadFailed(let error)): return "Failed to load editable Markdown: \(error)"
+    case (.en, .editableMarkdownSaveFailed(let error)): return "Failed to save edited Markdown: \(error)"
 
     case (.de, .ready): return "Bereit — lokale Aufnahme und Transkription"
     case (.de, .noDownloadedModels(let needsExecutable)):
@@ -1135,36 +827,17 @@ public final class VoiceCaptionerAppModel: ObservableObject {
     case (.de, .capturedTrackPreview(let track)):
       return "\(track)-Spur erfasst; lokale Transkription ersetzt diesen Entwurf."
     case (.de, .recordingWithoutLiveTranscription(let title)):
-      return
-        "\(title) wird lokal aufgenommen; lokales Modell und whisper.cpp-Programm für verzögerte Live-Transkription auswählen."
+      return "\(title) wird lokal aufgenommen; lokales Modell und whisper.cpp-Programm für verzögerte Live-Transkription auswählen."
     case (.de, .liveTranscriptionUpdated(let count)):
       return "Verzögerte Live-Transkription aktualisiert: \(count) Entwurfssegment(e)."
     case (.de, .liveTranscriptionFailed(let error)):
       return "Verzögerte Live-Transkription fehlgeschlagen: \(error)"
-    case (.de, .editableMarkdownSaved): return "Bearbeitetes Markdown gespeichert."
+    case (.de, .editableMarkdownSaved): return "Bearbeitetes Markdown automatisch gespeichert."
     case (.de, .editableMarkdownLoadFailed(let error)):
       return "Bearbeitbares Markdown konnte nicht geladen werden: \(error)"
     case (.de, .editableMarkdownSaveFailed(let error)):
-      return "Bearbeitbares Markdown konnte nicht gespeichert werden: \(error)"
+      return "Bearbeitetes Markdown konnte nicht gespeichert werden: \(error)"
     }
-  }
-
-  private func meeting(withID id: String?) -> MeetingFolder? {
-    guard let id else { return nil }
-    if let meeting = meetings.first(where: { $0.metadata.id == id }) {
-      return meeting
-    }
-    if activeMeeting?.metadata.id == id {
-      return activeMeeting
-    }
-    return nil
-  }
-
-  private func handleSelectedMeetingChange(from oldValue: String?, to newValue: String?) {
-    guard !isChangingSelectionInternally else { return }
-    guard oldValue != newValue || editableMarkdownMeetingID != newValue else { return }
-    autosaveEditableMarkdownIfDirty()
-    loadEditableMarkdown(for: selectedMeeting)
   }
 
   private func speakerLabel(for kind: AudioTrackKind) -> String {
