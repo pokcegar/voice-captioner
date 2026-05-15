@@ -17,23 +17,7 @@ struct ContentView: View {
     NavigationSplitView {
       meetingList
     } detail: {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 18) {
-          header
-          captureSettings
-          modelSettings
-          recordingControls
-          transcriptionControls
-          capabilityStatus
-          transcriptPreview
-          selectedMeetingDetails
-          Text(viewModel.status)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
-        }
-        .padding(24)
-        .frame(minWidth: 860, minHeight: 680, alignment: .topLeading)
-      }
+      consoleLayout
     }
     .task {
       viewModel.refreshAll()
@@ -42,7 +26,12 @@ struct ContentView: View {
   }
 
   private var meetingList: some View {
-    List(selection: $viewModel.selectedMeetingID) {
+    List(
+      selection: Binding(
+        get: { viewModel.selectedMeetingID },
+        set: { viewModel.selectMeeting(id: $0) }
+      )
+    ) {
       ForEach(viewModel.meetings, id: \.metadata.id) { meeting in
         VStack(alignment: .leading, spacing: 4) {
           Text(meeting.metadata.title)
@@ -61,6 +50,23 @@ struct ContentView: View {
     .toolbar {
       Button(strings.text(.refresh)) { viewModel.refreshAll() }
     }
+  }
+
+  private var consoleLayout: some View {
+    HStack(spacing: 0) {
+      MeetingWorkspaceView(viewModel: viewModel)
+        .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+      Divider()
+      SettingsInspectorView(
+        viewModel: viewModel,
+        chooseOutputRoot: chooseOutputRoot,
+        chooseWhisperExecutable: chooseWhisperExecutable,
+        chooseManualModel: chooseManualModel
+      )
+      .frame(width: viewModel.isRecording ? 280 : 340)
+      .background(.regularMaterial)
+    }
+    .frame(minWidth: 900, minHeight: 680)
   }
 
   private var header: some View {
